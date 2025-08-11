@@ -1,121 +1,146 @@
+===============================
 PhotoPainter Cropper (macOS)
-============================
+===============================
 
 Interactive cropper for the **Waveshare PhotoPainter** (7.3" ACeP, 800×480).
-It helps you frame the most important area of each photo with a fixed
-**800:480** ratio. The crop rectangle may also go **outside** the image; the
-empty area can be filled with **white** or with an auto-generated **blurred
-background**.
 
-I wrote this for my personal use on **macOS**. PhotoPainter has a fixed
-resolution and expects **24-bit BMP** files at **480×800 or 800×480**. I often
-work with mixed vertical and horizontal pictures, so I needed a quick way to
-center each image and keep the best part inside the frame. Because the
-rectangle selection is the core of this workflow, every save also writes a
-small **text state file** next to the original photo. When I run the tool again
-on the same folder, it restores the exact crop automatically. This helps a lot
-with **large batches**.
+This tool helps you frame the most important area of each photo with a fixed
+**800:480** ratio. The crop rectangle may extend **outside** the image; the
+empty area is filled with **White** or an auto-generated **Blurred background**.
+It was written for my personal workflow on **macOS**.
 
-Workflow
---------
+The app exports **JPG 800×480** (landscape). For the final device format
+(**24-bit BMP**), I use Waveshare’s **official converter**, which provides
+better color/tonal results on the 7-color panel than a plain BMP export.
 
-* Export **JPG 800×480** (landscape) with this tool.
-* Convert JPG → **24-bit BMP** with Waveshare’s official converter for better
-  results on the 7-color panel (dithering, auto orientation/crop).
-* Copy BMPs to the SD card for PhotoPainter.
+.. figure:: screenshot/0001_terminal.png
+   :alt: Terminal output showing saved JPGs and state files
+   :align: center
+   :width: 900
 
-Features
---------
+   Batch run: every Save creates a JPG and a per-image state file (``*_ppcrop.txt``).
+
+.. figure:: screenshot/002_choose_folder.png
+   :alt: Folder picker on macOS
+   :align: center
+   :width: 700
+
+.. figure:: screenshot/003_chooseFrameVerticalPicture.png
+   :alt: Cropping a vertical picture with a landscape 800×480 frame
+   :align: center
+   :width: 900
+
+.. figure:: screenshot/004_rememberFrameOnNextPass.png
+   :alt: The tool restores the crop rectangle on the next run
+   :align: center
+   :width: 900
+
+.. figure:: screenshot/005_chooseFrameHorizontal.png
+   :alt: Cropping a horizontal picture
+   :align: center
+   :width: 900
+
+.. figure:: screenshot/006_AllPicutureDone.png
+   :alt: Dialog confirming all pictures processed
+   :align: center
+   :width: 700
+
+Key Features
+============
 
 * Fixed **800:480** crop ratio (landscape).
-* Crop can extend **outside** the image bounds.
-* **Fill options**: **White** or **Blur** (auto background from the image).
-* **Per-image state** (``*_ppcrop.txt``): saves and restores the exact rectangle.
+* Crop can go **out of image bounds**; fill with **White** or **Blur** (toggle ``F``).
+* **Per-image state**: saving writes ``*_ppcrop.txt`` next to the original image;
+  running again restores the exact rectangle automatically (great for large batches).
+* **Mouse**: drag to move, scroll to resize.
 * **Keyboard**:
-  - Arrows = move (hold **Shift** for faster)
-  - ``+`` / ``-`` = resize (hold **Shift** for faster)
-  - **Enter**, **Tab**, or **A** = save current and go next
+  - Arrows = move (hold **Shift** = faster)
+  - ``+`` / ``-`` = resize (hold **Shift** = faster)
+  - **Enter**, **Tab**, or **A** = save current and go to next
   - **F** = toggle fill (White ↔ Blur)
   - **Esc** = skip image
-* **Mouse**: drag to move, wheel to resize.
-* Crisp grid lines aligned to device pixels (looks straight on Retina).
+* Crisp grid lines aligned to device pixels (look straight on Retina).
 
 Why JPG first, then BMP?
-------------------------
+========================
 
-I tested direct BMP export that follows the device format, but the results looked
-a bit **flat**. The official converter applies **dithering** and other adjustments,
-and in practice produces **better images** on the 7-color display. Therefore I
-export **JPG** first, then convert to **24-bit BMP** with the official tool.
+I tested direct BMP export that follows the device format, but the images looked
+a bit **flat**. The official Waveshare converter applies **dithering** and other
+processing, and it **looks better on the PhotoPainter**.
 
-Requirements
-------------
+Typical workflow:
 
-* **macOS** and the **official Python** for macOS (includes Tkinter).
-* Python packages: see ``requirements.txt`` (Pillow).
+#. Use this app to export **JPG 800×480**.
+#. Convert JPG → **24-bit BMP** using the official Waveshare converter.
+#. Copy BMPs to the SD card.
 
-Notes on the device and firmware
---------------------------------
+Samples and Outputs Included
+============================
 
-* PhotoPainter accepts **24-bit BMP** images at **480×800 or 800×480**.
-* With the stock firmware, Waveshare recommends fewer than **100** files in
-  the ``pic/`` directory.
-* I personally use a **custom firmware** (not mine) by **@tcellerier**, which
-  adds *mode 3* with **up to 2000** photos and other features.
+* Example **input** photos (both portrait and landscape) live under ``samples/``.
+* Example **outputs** from this tool (JPG 800×480) are available under
+  ``_export_photopainter_jpg/``.
+* For convenience, this repository may also include **BMP files** created with
+  Waveshare’s converter inside the same ``_export_photopainter_jpg/`` folder, so
+  testers can copy them directly to the device.
 
-Install
--------
+Device SD Card Layout
+=====================
+
+* Create a folder named ``pic`` at the **root** of the SD card.
+* Copy all **24-bit BMP** files inside ``pic``.
+* Stock firmware expects fewer than ~100 images in ``pic``.
+* I personally use a **custom firmware** (not mine) by ``@tcellerier`` that
+  supports **up to 2000 photos**.
+
+Install (macOS)
+===============
+
+Use the **official** Python for macOS (includes Tkinter).
 
 .. code-block:: bash
 
-   # Create a virtual environment (official Python on macOS)
-   python3 -m venv ~/ppainter-venv
+   /Library/Frameworks/Python.framework/Versions/3.12/bin/python3 -m venv ~/ppainter-venv
    source ~/ppainter-venv/bin/activate
    python -m pip install --upgrade pip
    pip install -r requirements.txt
 
 Run
----
+===
 
 .. code-block:: bash
 
    source ~/ppainter-venv/bin/activate
    python photo_painter_cropper.py
 
-* Choose a folder with images (``.jpg/.jpeg/.png/.bmp/.tif/.webp``).
-* Position and size the rectangle (mouse or keyboard).
+* Supported inputs: ``.jpg``, ``.jpeg``, ``.png``, ``.bmp``, ``.tif``, ``.webp``.
+* Use mouse/keyboard to position and size the rectangle.
 * Press **Enter / Tab / A** to save and go to the next.
-* Output JPGs are written to ``_export_photopainter_jpg/`` (next to your originals).
-* The tool writes a ``*_ppcrop.txt`` next to each original to **remember** the crop.
+* Output JPGs go to ``_export_photopainter_jpg/`` next to your originals.
+* A ``*_ppcrop.txt`` file is written next to each original to **remember** the crop.
 
-Portrait support
-----------------
+Project Type (GitHub Topics)
+============================
 
-This version exports **landscape** (800×480). If you need **portrait** (480×800),
-feel free to open an issue or send a PR.
+Desktop GUI **application** (Tkinter) for macOS. Suggested topics:
+``app``, ``desktop``, ``gui``, ``tkinter``, ``pillow``, ``macos``,
+``image-processing``, ``photopainter``, ``waveshare``, ``e-paper``.
 
 References
-----------
+==========
 
-* Waveshare PhotoPainter wiki (specs, BMP format, Mac/Win conversion tools):
-  `Waveshare PhotoPainter wiki`_
-
-* Official image converter (JPEG → BMP) by Waveshare:
-  `PhotoPainter_B`_
-
-* Custom firmware (not mine) that adds *mode 3* with up to **2000** photos:
-  `Pico_ePaper_73`_
-
-* Article in this blog:
-  `geegeek.github.io`_
+* Waveshare **PhotoPainter wiki** (specs, formats, conversion tools)  
+  https://www.waveshare.com/wiki/PhotoPainter
+* Official **JPEG→BMP converter** (PhotoPainter_B)  
+  https://github.com/waveshareteam/PhotoPainter_B
+* Custom firmware (not mine) by **@tcellerier** — up to **2000** photos  
+  https://github.com/tcellerier/Pico_ePaper_73
+* My site  
+  https://geegeek.github.io/
 
 License & Credits
------------------
+=================
 
-* Not affiliated with Waveshare. Trademarks belong to their owners.
-* Firmware credit: **@tcellerier** (see `Pico_ePaper_73`_).
-
-.. _Waveshare PhotoPainter wiki: https://www.waveshare.com/wiki/PhotoPainter
-.. _PhotoPainter_B: https://github.com/waveshareteam/PhotoPainter_B
-.. _Pico_ePaper_73: https://github.com/tcellerier/Pico_ePaper_73
-.. _geegeek.github.io: https://geegeek.github.io/
+* License: **MIT**.
+* Not affiliated with Waveshare. All trademarks belong to their owners.
+* Firmware credit: **@tcellerier** (see link above).
