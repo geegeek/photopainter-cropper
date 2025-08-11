@@ -112,7 +112,6 @@ References
 License & Credits
 -----------------
 
-* Consider using the **MIT License** (or your preferred open-source license).
 * Not affiliated with Waveshare. Trademarks belong to their owners.
 * Firmware credit: **@tcellerier** (see `Pico_ePaper_73`_).
 
