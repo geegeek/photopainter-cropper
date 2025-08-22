@@ -31,6 +31,14 @@ alt="screenshot/002_choose_folder.png" />
 alt="screenshot/003_chooseFrameVerticalPicture.png" />
 </figure>
 
+Became like this:
+
+<figure class="align-center">
+<img src="_export_photopainter_jpg/062be376-85a9-4c0c-b176-43ed1da19620_pp.jpg" width="900"
+alt="screenshot/003_chooseFrameVerticalPicture.png" />
+</figure>
+
+
 <figure class="align-center">
 <img src="screenshot/004_rememberFrameOnNextPass.png" width="900"
 alt="screenshot/004_rememberFrameOnNextPass.png" />
