@@ -40,6 +40,13 @@ Which becomes:
 alt="screenshot/003_chooseFrameVerticalPicture.png" />
 </figure>
 
+an the results after cnversion is something like this (obviously is different seen from the photopainter):
+
+<figure class="align-center">
+<img src="_export_photopainter_jpg/062be376-85a9-4c0c-b176-43ed1da19620_pp_scale_output_the_results.jpg" width="900"
+alt="screenshot/003_chooseFrameVerticalPicture.png" />
+</figure>
+
 Obviously image inside the rectangle remain as they are, just zoommed:
 
 <figure class="align-center">
