@@ -4,119 +4,129 @@ FotoPainterProProfessionalChatGPT.py
 ─────────────────────────────────────
 Script opzionale per il progetto photopainter-cropper.
 
-Scansiona le foto ritagliate già esportate da FotoPainter e permette
-di scegliere manualmente, foto per foto, se inviarle alle API di OpenAI
-(modello gpt-image-1) per una rielaborazione fotografica professionale.
+Apre una finestra grafica (Tkinter, stessa logica del programma principale)
+che mostra uno per uno i ritagli già esportati da FotoPainter.
+Per ogni foto puoi decidere se inviarla alle API di OpenAI per una
+rielaborazione fotografica professionale.
 
-NON modifica né tocca il programma principale photo_painter_cropper.py.
+NON modifica né tocca photo_painter_cropper.py.
 NON sovrascrive mai file esistenti.
 
 Uso:
     python FotoPainterProProfessionalChatGPT.py [cartella_export]
 
-    cartella_export  percorso della cartella _export_photopainter_jpg
+    cartella_export  percorso di _export_photopainter_jpg
                      (default: ./_export_photopainter_jpg)
 
 Configurazione API key (una delle due strade):
     1. Variabile d'ambiente:   export OPENAI_API_KEY="sk-..."
-    2. File .env nella stessa cartella dello script: OPENAI_API_KEY=sk-...
+    2. File .env accanto allo script:  OPENAI_API_KEY=sk-...
 
-Dipendenze aggiuntive (oltre a quelle già presenti nel progetto):
+Dipendenze aggiuntive:
     pip install openai
-    pip install python-dotenv   # opzionale, per il supporto .env
 """
 
 import os
 import sys
-import time
 import datetime
-import json
 import base64
-import termios
-import tty
+import io
+import tkinter as tk
+from tkinter import messagebox
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Optional
 
+from PIL import Image, ImageTk
+
+
+# ════════════════════════════════════════════════════════════════════════════
+#
+#   PROMPT — modifica liberamente questo blocco
+#   ───────────────────────────────────────────
+#   È l'unica parte da toccare se vuoi cambiare le istruzioni a ChatGPT.
+#   Usa triple-quote per scrivere su più righe senza preoccuparti di escape.
+#
+# ════════════════════════════════════════════════════════════════════════════
+
+PROFESSIONAL_PROMPT = """
+Reprocess this photo as if it were taken by a professional photographer \
+using a full-frame DSLR or mirrorless camera (such as a Canon EOS R5 or \
+Sony A7 IV) with a high-quality prime lens. Apply professional three-point \
+studio lighting or natural golden-hour lighting, whichever is more coherent \
+with the original scene.
+
+Strict constraints — do not violate under any circumstances:
+- Do NOT alter, reconstruct, or "improve" any human face. Preserve every \
+facial feature, expression, and characteristic exactly as they appear in \
+the original.
+- Do NOT change the position, posture, or arrangement of any person in \
+the photo.
+- Do NOT add, remove, or reinterpret any element of the scene.
+- If any area of the image is blurry or out of focus in the original, do \
+NOT invent or hallucinate detail — keep that area consistent with the \
+original level of blur and information.
+- Improve only: sharpness where it was technically limited by the phone \
+sensor, dynamic range, color grading, noise reduction, and lighting quality.
+- The result must feel like the same moment captured with better equipment \
+— not a reinterpretation or enhancement of the subjects.
+""".strip()
+
+# ════════════════════════════════════════════════════════════════════════════
+#   Fine sezione PROMPT
+# ════════════════════════════════════════════════════════════════════════════
+
+
 # ────────────────────────────────────────────────────────────────────────────
-#  CONFIGURAZIONE
+#  CONFIGURAZIONE (parametri tecnici — modifica se necessario)
 # ────────────────────────────────────────────────────────────────────────────
 
-# Nome della sottocartella di export creata da FotoPainter
+# Sottocartella di export creata da FotoPainter
 EXPORT_SUBDIR = "_export_photopainter_jpg"
 
-# Suffissi usati dal programma principale
-CROP_SUFFIX  = "_pp.jpg"        # file ritagliato esportato
-STATE_SUFFIX = "_ppcrop.txt"    # file stato accanto all'originale
+# Suffissi del programma principale
+CROP_SUFFIX  = "_pp.jpg"      # ritaglio esportato
+STATE_SUFFIX = "_ppcrop.txt"  # file stato accanto all'originale
 
 # Suffisso per i file prodotti da questo script
 CHATGPT_SUFFIX = "_chatgpt"
 
-# Nome del log per questa funzionalità (nella cartella export)
+# Nome del log (nella cartella export)
 LOG_FILENAME = "chatgpt_pro_session.log"
 
-# Modello OpenAI da usare per il editing delle immagini.
-# "gpt-image-1" è il modello più recente e raccomandato.
-# In caso di errore di accesso, provare "dall-e-2" (vincoli più stretti).
+# Modello OpenAI per l'editing delle immagini
+# "gpt-image-1" è il più recente; fallback possibile: "dall-e-2"
 OPENAI_IMAGE_MODEL = "gpt-image-1"
 
-# Dimensione output richiesta all'API
-# Valori supportati da gpt-image-1: "1024x1024", "1536x1024", "1024x1536"
+# Dimensione output (gpt-image-1: "1024x1024" | "1536x1024" | "1024x1536")
 OPENAI_OUTPUT_SIZE = "1024x1024"
 
-# Timeout API in secondi (le elaborazioni foto possono richiedere tempo)
-API_TIMEOUT_SECONDS = 120
+# Finestra minima
+WINDOW_MIN = (960, 640)
 
-# Prompt professionale da inviare ad ogni elaborazione
-PROFESSIONAL_PROMPT = (
-    "Reprocess this photo as if it were taken by a professional photographer "
-    "using a full-frame DSLR or mirrorless camera (such as a Canon EOS R5 or "
-    "Sony A7 IV) with a high-quality prime lens. Apply professional three-point "
-    "studio lighting or natural golden-hour lighting, whichever is more coherent "
-    "with the original scene.\n\n"
-    "Strict constraints — do not violate under any circumstances:\n"
-    "- Do NOT alter, reconstruct, or \"improve\" any human face. Preserve every "
-    "facial feature, expression, and characteristic exactly as they appear in "
-    "the original.\n"
-    "- Do NOT change the position, posture, or arrangement of any person in "
-    "the photo.\n"
-    "- Do NOT add, remove, or reinterpret any element of the scene.\n"
-    "- If any area of the image is blurry or out of focus in the original, do "
-    "NOT invent or hallucinate detail — keep that area consistent with the "
-    "original level of blur and information.\n"
-    "- Improve only: sharpness where it was technically limited by the phone "
-    "sensor, dynamic range, color grading, noise reduction, and lighting quality.\n"
-    "- The result must feel like the same moment captured with better equipment "
-    "— not a reinterpretation or enhancement of the subjects."
-)
 
 # ────────────────────────────────────────────────────────────────────────────
-#  STRUTTURA DATI per una singola foto
+#  STRUTTURA DATI
 # ────────────────────────────────────────────────────────────────────────────
 
 @dataclass
 class PhotoEntry:
-    """Tutte le informazioni associate a un ritaglio esportato da FotoPainter."""
-    basename: str           # es. "20-3670x2462"
-    crop_path: Path         # es. …/_export_photopainter_jpg/20-3670x2462_pp.jpg
-    state_path: Optional[Path]  # es. …/samples/20-3670x2462_ppcrop.txt (può mancare)
-    state_data: dict = field(default_factory=dict)  # contenuto del _ppcrop.txt
+    """Tutte le info associate a un ritaglio esportato da FotoPainter."""
+    basename:   str            # es. "20-3670x2462"
+    crop_path:  Path           # es. …/_export_photopainter_jpg/20-3670x2462_pp.jpg
+    state_path: Optional[Path] # es. …/samples/20-3670x2462_ppcrop.txt (può mancare)
+    state_data: dict = field(default_factory=dict)
 
 
 # ────────────────────────────────────────────────────────────────────────────
-#  CARICAMENTO CONFIGURAZIONE API KEY
+#  API KEY
 # ────────────────────────────────────────────────────────────────────────────
 
 def load_api_key() -> str:
-    """
-    Cerca OPENAI_API_KEY nell'ambiente o in un file .env nella cartella
-    dello script. Restituisce la chiave trovata o '' se assente.
-    """
+    """Cerca OPENAI_API_KEY nell'ambiente o in un file .env accanto allo script."""
     key = os.environ.get("OPENAI_API_KEY", "")
     if key:
         return key
-
-    # Prova a leggere un file .env semplice (key=value, una per riga)
     env_path = Path(__file__).parent / ".env"
     if env_path.is_file():
         with open(env_path, "r", encoding="utf-8") as f:
@@ -126,31 +136,27 @@ def load_api_key() -> str:
                     key = line.split("=", 1)[1].strip().strip('"').strip("'")
                     if key:
                         return key
-
     return ""
 
 
 def setup_openai_client():
-    """
-    Inizializza e restituisce il client OpenAI.
-    Termina con un messaggio chiaro se la libreria non è installata
-    o la chiave API è assente.
-    """
+    """Inizializza il client OpenAI o esce con messaggio chiaro."""
     try:
         from openai import OpenAI
     except ImportError:
-        print(
-            "\n[ERRORE] La libreria openai non è installata.\n"
-            "Esegui:  pip install openai\n"
+        messagebox.showerror(
+            "Libreria mancante",
+            "La libreria openai non è installata.\n\nEsegui:\n    pip install openai"
         )
         sys.exit(1)
 
     api_key = load_api_key()
     if not api_key:
-        print(
-            "\n[ERRORE] OPENAI_API_KEY non trovata.\n"
+        messagebox.showerror(
+            "API key mancante",
+            "OPENAI_API_KEY non trovata.\n\n"
             "Imposta la variabile d'ambiente oppure crea un file .env con:\n"
-            "    OPENAI_API_KEY=sk-...\n"
+            "    OPENAI_API_KEY=sk-..."
         )
         sys.exit(1)
 
@@ -161,11 +167,8 @@ def setup_openai_client():
 #  SCANSIONE FOTO
 # ────────────────────────────────────────────────────────────────────────────
 
-def read_state_file(txt_path: Path) -> dict:
-    """
-    Legge un file *_ppcrop.txt (formato key=value) e restituisce un dict.
-    Ritorna {} se il file non esiste o non è leggibile.
-    """
+def read_state_file(txt_path: Optional[Path]) -> dict:
+    """Legge un *_ppcrop.txt (key=value) e restituisce un dict. Silenzioso se assente."""
     if not txt_path or not txt_path.is_file():
         return {}
     data = {}
@@ -182,48 +185,35 @@ def read_state_file(txt_path: Path) -> dict:
     return data
 
 
-def scan_photos(export_folder: Path, source_folder: Path) -> list[PhotoEntry]:
+def scan_photos(export_folder: Path, source_folder: Path) -> list:
     """
-    Scansiona la cartella export cercando tutti i file *_pp.jpg.
+    Trova tutti i *_pp.jpg nella cartella export.
     Per ciascuno cerca il corrispondente _ppcrop.txt nella cartella sorgente.
-    Restituisce la lista ordinata di PhotoEntry.
     """
-    if not export_folder.is_dir():
-        print(f"[ERRORE] Cartella export non trovata: {export_folder}")
-        return []
-
     entries = []
     for crop_file in sorted(export_folder.glob(f"*{CROP_SUFFIX}")):
-        # Basename: "20-3670x2462_pp.jpg" → "20-3670x2462"
         basename = crop_file.name[: -len(CROP_SUFFIX)]
-
-        # Cerca il file stato nella cartella sorgente
         state_path = source_folder / (basename + STATE_SUFFIX)
         if not state_path.is_file():
             state_path = None
-
-        state_data = read_state_file(state_path)
-
         entries.append(PhotoEntry(
             basename=basename,
             crop_path=crop_file,
             state_path=state_path,
-            state_data=state_data,
+            state_data=read_state_file(state_path),
         ))
-
     return entries
 
 
 # ────────────────────────────────────────────────────────────────────────────
-#  NAMING PROGRESSIVO (evita sempre di sovrascrivere)
+#  NAMING PROGRESSIVO (mai sovrascrivere)
 # ────────────────────────────────────────────────────────────────────────────
 
 def get_chatgpt_output_path(export_folder: Path, basename: str) -> Path:
     """
-    Restituisce il percorso per salvare il risultato ChatGPT senza
-    sovrascrivere file esistenti.
-
-    Pattern:  {basename}_chatgpt_1.jpg, _chatgpt_2.jpg, …
+    Restituisce il prossimo percorso disponibile:
+        {basename}_chatgpt_1.jpg  →  _chatgpt_2.jpg  →  _chatgpt_3.jpg  …
+    Non sovrascrive mai file esistenti.
     """
     n = 1
     while True:
@@ -234,18 +224,15 @@ def get_chatgpt_output_path(export_folder: Path, basename: str) -> Path:
 
 
 # ────────────────────────────────────────────────────────────────────────────
-#  INVIO A CHATGPT (flusso sincrono, lineare)
+#  API OPENAI (flusso sincrono)
 # ────────────────────────────────────────────────────────────────────────────
 
 def send_to_openai(client, crop_path: Path) -> bytes:
     """
-    Invia il file ritagliato alle API OpenAI e restituisce i bytes dell'immagine
-    risultante. Aspetta la risposta prima di ritornare (flusso sincrono).
-
-    Lancia eccezione in caso di errore API.
+    Invia il ritaglio alle API OpenAI con il PROFESSIONAL_PROMPT.
+    Attende la risposta (bloccante) e restituisce i byte dell'immagine.
+    Lancia eccezione in caso di errore.
     """
-    print(f"  → Invio a OpenAI ({OPENAI_IMAGE_MODEL})… attendere.")
-
     with open(crop_path, "rb") as img_file:
         response = client.images.edit(
             model=OPENAI_IMAGE_MODEL,
@@ -254,23 +241,14 @@ def send_to_openai(client, crop_path: Path) -> bytes:
             size=OPENAI_OUTPUT_SIZE,
             response_format="b64_json",
         )
-
-    # La risposta contiene una lista di immagini; prendiamo la prima
     b64_data = response.data[0].b64_json
     if not b64_data:
         raise ValueError("La risposta API non contiene dati immagine.")
-
     return base64.b64decode(b64_data)
 
 
 def save_result(image_bytes: bytes, out_path: Path) -> None:
-    """
-    Salva i byte PNG/JPG ricevuti dall'API come JPG nel percorso indicato.
-    Usa Pillow per garantire il formato JPEG corretto e qualità 95.
-    """
-    from PIL import Image
-    import io
-
+    """Salva i byte ricevuti dall'API come JPEG qualità 95."""
     img = Image.open(io.BytesIO(image_bytes)).convert("RGB")
     img.save(out_path, format="JPEG", quality=95, progressive=True)
 
@@ -280,10 +258,7 @@ def save_result(image_bytes: bytes, out_path: Path) -> None:
 # ────────────────────────────────────────────────────────────────────────────
 
 def append_log(log_path: Path, entry: dict) -> None:
-    """
-    Aggiunge una voce al file di log in formato leggibile.
-    Crea il file se non esiste. Non sovrascrive mai le voci precedenti.
-    """
+    """Appende una voce leggibile al file di log (non sovrascrive mai)."""
     try:
         with open(log_path, "a", encoding="utf-8") as f:
             f.write("\n" + "─" * 60 + "\n")
@@ -294,233 +269,303 @@ def append_log(log_path: Path, entry: dict) -> None:
 
 
 # ────────────────────────────────────────────────────────────────────────────
-#  INPUT TASTIERA (singolo tasto, senza bisogno di premere Invio)
+#  APPLICAZIONE TKINTER
 # ────────────────────────────────────────────────────────────────────────────
 
-def get_single_keypress() -> str:
+class ReviewerApp:
     """
-    Attende un singolo tasto dall'utente senza richiedere Invio.
-    Ritorna uno tra: 'enter', 'y', 'esc', o il carattere premuto.
+    Finestra Tkinter che mostra uno per uno i ritagli esportati da FotoPainter.
 
-    Funziona su terminale Unix/Linux/macOS con tty reale.
-    Fallback su input() se non è possibile usare la modalità raw.
+    Controlli:
+        INVIO   → passa alla foto successiva (skip)
+        Y       → invia a ChatGPT, aspetta risposta, salva, avanza
+        ESC     → chiude la sessione in modo pulito
     """
-    # Fallback se non siamo su un terminale reale (es. pipe, IDE)
-    if not sys.stdin.isatty():
+
+    # colori dell'interfaccia (stessa palette del programma principale)
+    BG_DARK   = "#111111"
+    BG_BAR    = "#1a1a1a"
+    FG_INFO   = "#cccccc"
+    FG_OK     = "#00ff88"
+    FG_WARN   = "#ffaa00"
+    FG_ERR    = "#ff4444"
+
+    def __init__(self, root: tk.Tk, photos: list, client,
+                 export_folder: Path, log_path: Path):
+        self.root          = root
+        self.photos        = photos
+        self.client        = client
+        self.export_folder = export_folder
+        self.log_path      = log_path
+
+        self.idx         = 0
+        self.sent_count  = 0
+        self.skip_count  = 0
+        self.tk_img      = None   # riferimento mantenuto per evitare GC
+        self.current_pil = None   # PIL Image della foto corrente
+
+        self._build_ui()
+        self._bind_keys()
+        self.show_current()
+
+    # ── costruzione UI ───────────────────────────────────────────────────────
+
+    def _build_ui(self):
+        self.root.title("FotoPainter Pro — Revisione ChatGPT")
+        self.root.minsize(*WINDOW_MIN)
+        self.root.configure(bg=self.BG_DARK)
+
+        # barra superiore: info foto corrente
+        top = tk.Frame(self.root, bg=self.BG_BAR)
+        top.pack(fill=tk.X, side=tk.TOP)
+        self.info_lbl = tk.Label(
+            top, text="", bg=self.BG_BAR, fg=self.FG_INFO,
+            font=("monospace", 11), anchor="w"
+        )
+        self.info_lbl.pack(padx=12, pady=7, fill=tk.X)
+
+        # canvas centrale: mostra il ritaglio
+        self.canvas = tk.Canvas(self.root, bg=self.BG_DARK, highlightthickness=0)
+        self.canvas.pack(fill=tk.BOTH, expand=True)
+
+        # barra inferiore: istruzioni / stato operazione
+        bottom = tk.Frame(self.root, bg=self.BG_BAR)
+        bottom.pack(fill=tk.X, side=tk.BOTTOM)
+        self.status_lbl = tk.Label(
+            bottom,
+            text="  [INVIO] Prossima foto   [Y] Invia a ChatGPT   [ESC] Esci",
+            bg=self.BG_BAR, fg=self.FG_OK,
+            font=("monospace", 11), anchor="w"
+        )
+        self.status_lbl.pack(padx=12, pady=7, fill=tk.X)
+
+    def _bind_keys(self):
+        self.root.bind("<Return>",    self.on_next)
+        self.root.bind("<Escape>",    self.on_quit)
+        self.root.bind("<y>",         self.on_send)
+        self.root.bind("<Y>",         self.on_send)
+        self.root.bind("<Configure>", self.on_resize)
+
+    # ── navigazione foto ─────────────────────────────────────────────────────
+
+    def show_current(self):
+        """Carica e mostra la foto corrente; gestisce fine lista e immagini corrotte."""
+        if self.idx >= len(self.photos):
+            self._on_all_done()
+            return
+
+        entry = self.photos[self.idx]
+
+        # carica il ritaglio _pp.jpg
         try:
-            raw = input().strip().lower()
-            if raw == "":
-                return "enter"
-            if raw in ("y", "yes"):
-                return "y"
-            if raw in ("esc", "q", "quit"):
-                return "esc"
-            return raw
-        except (EOFError, KeyboardInterrupt):
-            return "esc"
+            self.current_pil = Image.open(entry.crop_path).convert("RGB")
+        except Exception as e:
+            self._set_status(f"[WARN] Immagine non leggibile: {e}", self.FG_WARN)
+            self.root.after(1500, self._advance)
+            return
 
-    # Modalità raw: legge un singolo byte senza bufferizzazione
-    fd = sys.stdin.fileno()
-    old_settings = termios.tcgetattr(fd)
-    try:
-        tty.setraw(fd)
-        ch = sys.stdin.read(1)
-    finally:
-        termios.tcsetattr(fd, termios.TCSADRAIN, old_settings)
+        self._update_info_label(entry)
+        self._set_status(
+            "  [INVIO] Prossima foto   [Y] Invia a ChatGPT   [ESC] Esci",
+            self.FG_OK
+        )
+        self._redraw()
 
-    if ch == "\r" or ch == "\n":
-        return "enter"
-    if ch == "\x1b":      # ESC
-        return "esc"
-    if ch == "\x03":      # Ctrl+C
-        return "esc"
-    return ch.lower()
+    def _advance(self):
+        self.idx += 1
+        self.show_current()
 
+    # ── rendering ────────────────────────────────────────────────────────────
 
-# ────────────────────────────────────────────────────────────────────────────
-#  PRESENTAZIONE FOTO A TERMINALE
-# ────────────────────────────────────────────────────────────────────────────
+    def _redraw(self):
+        """Scala e disegna la foto corrente centrata sul canvas (dark background)."""
+        if not self.current_pil:
+            return
 
-def show_photo_info(entry: PhotoEntry, index: int, total: int) -> None:
-    """Stampa le informazioni della foto corrente in modo leggibile."""
-    sep = "═" * 62
-    print(f"\n{sep}")
-    print(f"  Foto {index}/{total}")
-    print(sep)
-    print(f"  Basename    : {entry.basename}")
-    print(f"  Ritaglio    : {entry.crop_path}")
+        cw = max(self.canvas.winfo_width(),  WINDOW_MIN[0])
+        ch = max(self.canvas.winfo_height(), WINDOW_MIN[1] - 80)
 
-    if entry.state_path:
-        print(f"  Stato TXT   : {entry.state_path}")
-        # Mostra alcuni campi utili dal file stato
+        iw, ih = self.current_pil.size
+        scale  = min(cw / iw, ch / ih)
+        dw     = max(1, int(iw * scale))
+        dh     = max(1, int(ih * scale))
+
+        resized      = self.current_pil.resize((dw, dh), Image.LANCZOS)
+        self.tk_img  = ImageTk.PhotoImage(resized)
+
+        ox = (cw - dw) // 2
+        oy = (ch - dh) // 2
+
+        self.canvas.delete("all")
+        self.canvas.create_image(ox, oy, anchor="nw", image=self.tk_img)
+
+    def on_resize(self, event=None):
+        self._redraw()
+
+    # ── label helpers ─────────────────────────────────────────────────────────
+
+    def _update_info_label(self, entry: PhotoEntry):
+        """Costruisce la riga informativa nella barra superiore."""
         sd = entry.state_data
+        parts = [f"Foto {self.idx + 1}/{len(self.photos)}  —  {entry.basename}"]
+
         if sd.get("image_name"):
-            print(f"  Originale   : {sd['image_name']}")
+            parts.append(f"orig: {sd['image_name']}")
         if sd.get("image_w") and sd.get("image_h"):
-            print(f"  Dim.orig.   : {sd['image_w']} × {sd['image_h']} px")
+            parts.append(f"{sd['image_w']}×{sd['image_h']} px")
         if sd.get("fill_mode"):
-            print(f"  Fill mode   : {sd['fill_mode']}")
+            parts.append(f"fill={sd['fill_mode']}")
         if sd.get("timestamp"):
             try:
                 ts = datetime.datetime.fromtimestamp(int(sd["timestamp"]))
-                print(f"  Processato  : {ts.strftime('%Y-%m-%d %H:%M:%S')}")
+                parts.append(ts.strftime("%Y-%m-%d %H:%M"))
             except (ValueError, OSError):
                 pass
-    else:
-        print("  Stato TXT   : (non trovato)")
 
-    # Mostra versioni ChatGPT già esistenti, se presenti
-    folder = entry.crop_path.parent
-    existing = sorted(folder.glob(f"{entry.basename}{CHATGPT_SUFFIX}_*.jpg"))
-    if existing:
-        print(f"  Versioni GI : {len(existing)} ({', '.join(f.name for f in existing)})")
+        # versioni ChatGPT già esistenti per questa foto
+        existing = sorted(
+            self.export_folder.glob(f"{entry.basename}{CHATGPT_SUFFIX}_*.jpg")
+        )
+        if existing:
+            parts.append(f"versioni ChatGPT già presenti: {len(existing)}")
 
-    print(sep)
-    print("  [INVIO] Passa alla successiva  |  [y] Invia a ChatGPT  |  [ESC] Esci")
-    print("  Scelta: ", end="", flush=True)
+        self.info_lbl.config(text="  " + "   │   ".join(parts))
 
+    def _set_status(self, text: str, color: str):
+        self.status_lbl.config(text=f"  {text}", fg=color)
 
-# ────────────────────────────────────────────────────────────────────────────
-#  SESSIONE INTERATTIVA PRINCIPALE
-# ────────────────────────────────────────────────────────────────────────────
+    # ── azioni utente ─────────────────────────────────────────────────────────
 
-def interactive_session(export_folder: Path, source_folder: Path) -> None:
-    """
-    Ciclo principale: mostra foto per foto, aspetta input utente,
-    invia a ChatGPT se richiesto (flusso sincrono).
-    """
-    print("\n" + "═" * 62)
-    print("  FotoPainter Pro — Rielaborazione Professionale ChatGPT")
-    print("═" * 62)
-    print(f"  Export folder : {export_folder}")
-    print(f"  Source folder : {source_folder}")
+    def on_next(self, event=None):
+        """INVIO → salta alla foto successiva."""
+        self.skip_count += 1
+        self._advance()
 
-    # Scansione
-    photos = scan_photos(export_folder, source_folder)
-    if not photos:
-        print("\n[INFO] Nessuna foto trovata nella cartella export.")
-        print(f"       Assicurati che contenga file *{CROP_SUFFIX}")
-        return
+    def on_quit(self, event=None):
+        """ESC → chiude la sessione in modo pulito."""
+        self._show_summary()
+        self.root.after(50, self.root.quit)
 
-    print(f"\n  Trovate {len(photos)} foto esportate da FotoPainter.\n")
+    def on_send(self, event=None):
+        """
+        Y → invia il ritaglio a ChatGPT (flusso sincrono):
+            1. mostra stato "invio in corso"
+            2. chiama l'API (bloccante — la finestra è ferma ma non crasha)
+            3. salva il risultato
+            4. logga
+            5. avanza alla prossima foto
+        """
+        entry   = self.photos[self.idx]
+        out_path = get_chatgpt_output_path(self.export_folder, entry.basename)
+        ts       = datetime.datetime.now().isoformat(timespec="seconds")
 
-    # Inizializzazione client (qui: prima di entrare nel loop,
-    # così eventuali errori di configurazione emergono subito)
-    client = setup_openai_client()
-    log_path = export_folder / LOG_FILENAME
-
-    sent_count = 0
-    skip_count = 0
-
-    for i, entry in enumerate(photos, start=1):
-
-        # ── Verifica accessibilità del file ritagliato ──────────────────────
-        if not entry.crop_path.is_file():
-            print(f"\n[WARN] File non trovato, salto: {entry.crop_path}")
-            continue
-
-        try:
-            # Verifica che l'immagine sia leggibile prima di mostrare la UI
-            from PIL import Image as _Image
-            with _Image.open(entry.crop_path) as _img:
-                _ = _img.size  # forza decodifica header
-        except Exception as e:
-            print(f"\n[WARN] Immagine non leggibile ({entry.crop_path.name}): {e}")
-            continue
-
-        # ── Mostra informazioni ──────────────────────────────────────────────
-        show_photo_info(entry, i, len(photos))
-
-        # ── Attendi input utente ─────────────────────────────────────────────
-        key = get_single_keypress()
-        print(key if key not in ("enter", "esc") else "")  # echo visivo
-
-        if key == "esc":
-            print("\n  Interruzione richiesta. Uscita pulita.")
-            break
-
-        if key == "enter":
-            skip_count += 1
-            continue  # passa alla prossima foto
-
-        if key != "y":
-            # Tasto non riconosciuto → tratta come skip
-            print(f"  (tasto '{key}' non riconosciuto — salto)")
-            skip_count += 1
-            continue
-
-        # ── L'utente ha scelto y: invia a ChatGPT ───────────────────────────
-        out_path = get_chatgpt_output_path(export_folder, entry.basename)
-        timestamp = datetime.datetime.now().isoformat(timespec="seconds")
-
-        print(f"\n  Elaborazione in corso… (questo può richiedere fino a "
-              f"{API_TIMEOUT_SECONDS}s)")
+        # feedback immediato prima di bloccare il thread UI
+        self._set_status(
+            f"Invio a OpenAI ({OPENAI_IMAGE_MODEL})… attendere.",
+            self.FG_WARN
+        )
+        self.info_lbl.config(text=f"  Elaborazione: {entry.basename}  —  non chiudere la finestra")
+        self.root.update()   # forza il ridisegno prima della chiamata bloccante
 
         api_error = None
         try:
-            image_bytes = send_to_openai(client, entry.crop_path)
+            image_bytes = send_to_openai(self.client, entry.crop_path)
             save_result(image_bytes, out_path)
-            print(f"  ✓ Salvato: {out_path.name}")
-            sent_count += 1
-
+            self.sent_count += 1
+            self._set_status(f"✓ Salvato: {out_path.name}", self.FG_OK)
+            self.root.update()
         except Exception as e:
             api_error = str(e)
-            print(f"\n  [ERRORE API] {e}")
-            print("  Il file NON è stato salvato. Puoi continuare con la prossima foto.")
+            self._set_status(f"[ERRORE API] {e}", self.FG_ERR)
+            self.root.update()
+            # lascia il messaggio di errore visibile 3 secondi, poi avanza
+            self.root.after(3000, self._advance)
+            self._write_log(ts, entry, out_path, api_error)
+            return
 
-        # ── Log ─────────────────────────────────────────────────────────────
-        log_entry = {
-            "timestamp":    timestamp,
+        self._write_log(ts, entry, out_path, api_error)
+        # breve pausa per leggere il messaggio di successo, poi avanza
+        self.root.after(1200, self._advance)
+
+    # ── log ──────────────────────────────────────────────────────────────────
+
+    def _write_log(self, ts: str, entry: PhotoEntry,
+                   out_path: Path, api_error: Optional[str]):
+        append_log(self.log_path, {
+            "timestamp":    ts,
             "originale":    entry.state_data.get("image_name", entry.basename),
             "crop_inviato": str(entry.crop_path),
             "prompt_usato": PROFESSIONAL_PROMPT[:80] + "…",
             "file_salvato": str(out_path) if not api_error else "(non salvato)",
             "errore":       api_error if api_error else "nessuno",
-        }
-        append_log(log_path, log_entry)
+        })
 
-    # ── Riepilogo finale ─────────────────────────────────────────────────────
-    print(f"\n{'═' * 62}")
-    print(f"  Sessione terminata.")
-    print(f"  Inviate a ChatGPT : {sent_count}")
-    print(f"  Saltate           : {skip_count}")
-    if log_path.exists():
-        print(f"  Log sessione      : {log_path}")
-    print("═" * 62 + "\n")
+    # ── fine sessione ─────────────────────────────────────────────────────────
+
+    def _on_all_done(self):
+        self._show_summary()
+        self.root.after(50, self.root.quit)
+
+    def _show_summary(self):
+        msg = (
+            f"Sessione completata.\n\n"
+            f"Inviate a ChatGPT : {self.sent_count}\n"
+            f"Saltate           : {self.skip_count}\n"
+        )
+        if self.log_path.exists():
+            msg += f"\nLog: {self.log_path}"
+        messagebox.showinfo("FotoPainter Pro — Riepilogo", msg)
 
 
 # ────────────────────────────────────────────────────────────────────────────
 #  ENTRY POINT
 # ────────────────────────────────────────────────────────────────────────────
 
-def main() -> None:
+def main():
     """
-    Punto di ingresso dello script.
-
     Uso:
         python FotoPainterProProfessionalChatGPT.py
         python FotoPainterProProfessionalChatGPT.py /percorso/a/_export_photopainter_jpg
     """
-    # Determina la cartella export
+    # determina la cartella export
     if len(sys.argv) > 1:
         export_folder = Path(sys.argv[1]).resolve()
     else:
-        # Default: _export_photopainter_jpg nella stessa directory dello script
         export_folder = Path(__file__).parent / EXPORT_SUBDIR
 
-    # La cartella sorgente (dove si trovano i _ppcrop.txt) è il genitore dell'export
-    # a meno che l'export sia la root stessa (caso raro, ma gestito).
-    source_folder = export_folder.parent
-
-    if not export_folder.exists():
-        print(
-            f"\n[ERRORE] Cartella export non trovata: {export_folder}\n"
-            f"Specifica il percorso corretto come argomento:\n"
-            f"    python {Path(__file__).name} /percorso/a/{EXPORT_SUBDIR}\n"
+    if not export_folder.is_dir():
+        # usa una finestra Tkinter minima per l'errore, poi esce
+        root = tk.Tk(); root.withdraw()
+        messagebox.showerror(
+            "Cartella non trovata",
+            f"Cartella export non trovata:\n{export_folder}\n\n"
+            f"Specifica il percorso come argomento:\n"
+            f"    python {Path(__file__).name} /percorso/a/{EXPORT_SUBDIR}"
         )
         sys.exit(1)
 
-    interactive_session(export_folder, source_folder)
+    # la cartella sorgente (dove stanno i _ppcrop.txt) è il genitore dell'export
+    source_folder = export_folder.parent
+
+    # scansione foto
+    photos = scan_photos(export_folder, source_folder)
+    if not photos:
+        root = tk.Tk(); root.withdraw()
+        messagebox.showinfo(
+            "Nessuna foto",
+            f"Nessun file *{CROP_SUFFIX} trovato in:\n{export_folder}\n\n"
+            "Esegui prima photo_painter_cropper.py per generare i ritagli."
+        )
+        sys.exit(0)
+
+    # inizializza client (esce con messagebox se manca la chiave)
+    client   = setup_openai_client()
+    log_path = export_folder / LOG_FILENAME
+
+    # avvia la GUI
+    root = tk.Tk()
+    ReviewerApp(root, photos, client, export_folder, log_path)
+    root.mainloop()
 
 
 if __name__ == "__main__":
