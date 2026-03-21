@@ -1,19 +1,19 @@
 #!/usr/bin/env python3
 """
-FotoPainterProProfessionalChatGPT.py
-─────────────────────────────────────
+photo_painter_cropperChatGPTProfessional.py
+───────────────────────────────────────────
 Script opzionale per il progetto photopainter-cropper.
 
 Apre una finestra grafica (Tkinter, stessa logica del programma principale)
 che mostra uno per uno i ritagli già esportati da FotoPainter.
-Per ogni foto puoi decidere se inviarla alle API di OpenAI per una
-rielaborazione fotografica professionale.
+Per ogni foto puoi decidere se inviarla alle API di OpenAI (dall-e-2) per
+una rielaborazione fotografica professionale.
 
 NON modifica né tocca photo_painter_cropper.py.
 NON sovrascrive mai file esistenti.
 
 Uso:
-    python FotoPainterProProfessionalChatGPT.py [cartella_export]
+    python photo_painter_cropperChatGPTProfessional.py [cartella_export]
 
     cartella_export  percorso di _export_photopainter_jpg
                      (default: ./_export_photopainter_jpg)
@@ -94,11 +94,10 @@ CHATGPT_SUFFIX = "_chatgpt"
 # Nome del log (nella cartella export)
 LOG_FILENAME = "chatgpt_pro_session.log"
 
-# Modello OpenAI per l'editing delle immagini
-# "gpt-image-1" è il più recente; fallback possibile: "dall-e-2"
-OPENAI_IMAGE_MODEL = "gpt-image-1"
-
-# Dimensione output (gpt-image-1: "1024x1024" | "1536x1024" | "1024x1536")
+# Modello OpenAI per l'editing delle immagini.
+# dall-e-2 è il modello supportato dall'endpoint images.edit().
+# Dimensioni valide: "256x256" | "512x512" | "1024x1024"
+OPENAI_IMAGE_MODEL = "dall-e-2"
 OPENAI_OUTPUT_SIZE = "1024x1024"
 
 # Finestra minima
@@ -224,23 +223,72 @@ def get_chatgpt_output_path(export_folder: Path, basename: str) -> Path:
 
 
 # ────────────────────────────────────────────────────────────────────────────
-#  API OPENAI (flusso sincrono)
+#  API OPENAI (flusso sincrono) — dall-e-2
 # ────────────────────────────────────────────────────────────────────────────
+#
+#  dall-e-2 images.edit() richiede:
+#    • image : PNG quadrato RGBA, max 4 MB
+#    • mask  : PNG quadrato RGBA — aree trasparenti = aree da rielaborare
+#  Usiamo una mask completamente trasparente per applicare il prompt
+#  all'intera immagine, e centra il ritaglio (non quadrato) su sfondo bianco.
+
+def _prepare_image_and_mask(crop_path: Path) -> tuple:
+    """
+    Converte il ritaglio JPEG in un PNG 1024×1024 RGBA centrato su sfondo bianco
+    e genera la mask corrispondente (completamente trasparente = ritocca tutto).
+    Restituisce (image_buffer, mask_buffer) pronti per l'API.
+    """
+    SIZE = 1024
+
+    # Carica e porta in RGBA
+    src = Image.open(crop_path).convert("RGBA")
+    iw, ih = src.size
+
+    # Scala mantenendo le proporzioni, centrata su 1024×1024
+    scale  = min(SIZE / iw, SIZE / ih)
+    new_w  = max(1, int(iw * scale))
+    new_h  = max(1, int(ih * scale))
+    scaled = src.resize((new_w, new_h), Image.LANCZOS)
+
+    # Sfondo bianco opaco
+    canvas = Image.new("RGBA", (SIZE, SIZE), (255, 255, 255, 255))
+    ox = (SIZE - new_w) // 2
+    oy = (SIZE - new_h) // 2
+    canvas.paste(scaled, (ox, oy))
+
+    img_buf = io.BytesIO()
+    canvas.save(img_buf, format="PNG")
+    img_buf.seek(0)
+    img_buf.name = "image.png"   # l'SDK OpenAI usa il nome per il MIME type
+
+    # Mask: tutto trasparente → dall-e-2 rielabora l'intera area con il prompt
+    mask = Image.new("RGBA", (SIZE, SIZE), (0, 0, 0, 0))
+    mask_buf = io.BytesIO()
+    mask.save(mask_buf, format="PNG")
+    mask_buf.seek(0)
+    mask_buf.name = "mask.png"
+
+    return img_buf, mask_buf
+
 
 def send_to_openai(client, crop_path: Path) -> bytes:
     """
-    Invia il ritaglio alle API OpenAI con il PROFESSIONAL_PROMPT.
+    Invia il ritaglio alle API OpenAI (dall-e-2) con il PROFESSIONAL_PROMPT.
     Attende la risposta (bloccante) e restituisce i byte dell'immagine.
     Lancia eccezione in caso di errore.
     """
-    with open(crop_path, "rb") as img_file:
-        response = client.images.edit(
-            model=OPENAI_IMAGE_MODEL,
-            image=img_file,
-            prompt=PROFESSIONAL_PROMPT,
-            size=OPENAI_OUTPUT_SIZE,
-            response_format="b64_json",
-        )
+    img_buf, mask_buf = _prepare_image_and_mask(crop_path)
+
+    response = client.images.edit(
+        model=OPENAI_IMAGE_MODEL,
+        image=img_buf,
+        mask=mask_buf,
+        prompt=PROFESSIONAL_PROMPT,
+        size=OPENAI_OUTPUT_SIZE,
+        response_format="b64_json",
+        n=1,
+    )
+
     b64_data = response.data[0].b64_json
     if not b64_data:
         raise ValueError("La risposta API non contiene dati immagine.")
@@ -524,8 +572,8 @@ class ReviewerApp:
 def main():
     """
     Uso:
-        python FotoPainterProProfessionalChatGPT.py
-        python FotoPainterProProfessionalChatGPT.py /percorso/a/_export_photopainter_jpg
+        python photo_painter_cropperChatGPTProfessional.py
+        python photo_painter_cropperChatGPTProfessional.py /percorso/a/_export_photopainter_jpg
     """
     # determina la cartella export
     if len(sys.argv) > 1:
