@@ -50,26 +50,20 @@ from PIL import Image, ImageTk
 # ════════════════════════════════════════════════════════════════════════════
 
 PROFESSIONAL_PROMPT = """
-Reprocess this photo as if it were taken by a professional photographer \
-using a full-frame DSLR or mirrorless camera (such as a Canon EOS R5 or \
-Sony A7 IV) with a high-quality prime lens. Apply professional three-point \
-studio lighting or natural golden-hour lighting, whichever is more coherent \
-with the original scene.
+Reprocess this photo as if taken by a professional photographer with a \
+full-frame DSLR (Canon EOS R5 or Sony A7 IV) and a prime lens. Apply \
+professional studio or golden-hour lighting matching the original scene.
 
-Strict constraints — do not violate under any circumstances:
-- Do NOT alter, reconstruct, or "improve" any human face. Preserve every \
-facial feature, expression, and characteristic exactly as they appear in \
-the original.
-- Do NOT change the position, posture, or arrangement of any person in \
-the photo.
+Strict constraints:
+- Do NOT alter any human face. Preserve every facial feature exactly as \
+in the original.
+- Do NOT change the position or posture of any person.
 - Do NOT add, remove, or reinterpret any element of the scene.
-- If any area of the image is blurry or out of focus in the original, do \
-NOT invent or hallucinate detail — keep that area consistent with the \
-original level of blur and information.
-- Improve only: sharpness where it was technically limited by the phone \
-sensor, dynamic range, color grading, noise reduction, and lighting quality.
-- The result must feel like the same moment captured with better equipment \
-— not a reinterpretation or enhancement of the subjects.
+- Keep blurry areas blurry — do not invent detail.
+- Improve only: sharpness, dynamic range, color grading, noise reduction, \
+lighting quality.
+- The result must feel like the same moment with better equipment, not a \
+reinterpretation.
 """.strip()
 
 # ════════════════════════════════════════════════════════════════════════════
