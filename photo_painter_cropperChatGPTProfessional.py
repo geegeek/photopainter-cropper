@@ -82,12 +82,10 @@ CHATGPT_SUFFIX = "_chatgpt"
 # Nome del log (nella cartella export)
 LOG_FILENAME = "chatgpt_pro_session.log"
 
-# Modello OpenAI per l'editing delle immagini.
-# gpt-image-1 è il modello usato da ChatGPT: capisce l'immagine originale
-# e la migliora senza stravolgerla, a differenza di dall-e-2 che la rigenera.
-# Dimensioni valide: "1024x1024" | "1536x1024" | "1024x1536" | "auto"
-OPENAI_IMAGE_MODEL = "gpt-image-1"
-OPENAI_OUTPUT_SIZE = "1024x1024"
+# Modello usato per la Responses API (stesso pipeline di ChatGPT).
+# GPT-4o vede l'immagine originale (vision) e poi usa image_generation
+# per produrre una versione migliorata fedele all'originale.
+OPENAI_IMAGE_MODEL = "gpt-4o"
 
 # Finestra minima
 WINDOW_MIN = (960, 640)
@@ -212,47 +210,61 @@ def get_chatgpt_output_path(export_folder: Path, basename: str) -> Path:
 
 
 # ────────────────────────────────────────────────────────────────────────────
-#  API OPENAI (flusso sincrono) — gpt-image-1
+#  API OPENAI (flusso sincrono) — Responses API con GPT-4o + image_generation
 # ────────────────────────────────────────────────────────────────────────────
 #
-#  gpt-image-1 images.edit() richiede:
-#    • image : file PNG/JPEG/WEBP, max 25 MB (non deve essere quadrato)
-#  NON richiede mask e NON supporta response_format: restituisce sempre base64.
-#  Il modello capisce l'immagine originale e applica solo le modifiche richieste.
+#  Questo è lo stesso pipeline usato da ChatGPT:
+#    1. GPT-4o riceve l'immagine originale e la "vede" davvero (vision)
+#    2. Il tool image_generation produce una versione migliorata
+#  A differenza di images.edit(), il modello comprende il contenuto prima
+#  di generare — volti, posizioni e composizione vengono preservati.
 
-def _prepare_image(crop_path: Path) -> io.BytesIO:
-    """
-    Converte il ritaglio JPEG in PNG e restituisce un buffer pronto per l'API.
-    gpt-image-1 non richiede dimensioni quadrate né canale alpha.
-    """
-    src = Image.open(crop_path).convert("RGB")
-    img_buf = io.BytesIO()
-    src.save(img_buf, format="PNG")
-    img_buf.seek(0)
-    img_buf.name = "image.png"   # l'SDK OpenAI usa il nome per il MIME type
-    return img_buf
+def _image_to_base64(crop_path: Path) -> str:
+    """Legge il file e restituisce la stringa base64."""
+    with open(crop_path, "rb") as f:
+        return base64.b64encode(f.read()).decode("utf-8")
 
 
 def send_to_openai(client, crop_path: Path) -> bytes:
     """
-    Invia il ritaglio alle API OpenAI (gpt-image-1) con il PROFESSIONAL_PROMPT.
-    Attende la risposta (bloccante) e restituisce i byte dell'immagine.
+    Invia il ritaglio alle API OpenAI (GPT-4o Responses API) con PROFESSIONAL_PROMPT.
+    GPT-4o vede l'immagine originale, poi usa il tool image_generation per
+    produrre una versione migliorata fedele all'originale.
     Lancia eccezione in caso di errore.
     """
-    img_buf = _prepare_image(crop_path)
+    b64 = _image_to_base64(crop_path)
+    # Determina il mime type dal suffisso del file
+    suffix = crop_path.suffix.lower()
+    mime = "image/jpeg" if suffix in (".jpg", ".jpeg") else "image/png"
 
-    response = client.images.edit(
-        model=OPENAI_IMAGE_MODEL,
-        image=img_buf,
-        prompt=PROFESSIONAL_PROMPT,
-        size=OPENAI_OUTPUT_SIZE,
-        n=1,
+    response = client.responses.create(
+        model="gpt-4o",
+        input=[
+            {
+                "role": "user",
+                "content": [
+                    {
+                        "type": "input_image",
+                        "image_url": f"data:{mime};base64,{b64}",
+                    },
+                    {
+                        "type": "input_text",
+                        "text": PROFESSIONAL_PROMPT,
+                    },
+                ],
+            }
+        ],
+        tools=[{"type": "image_generation"}],
     )
 
-    b64_data = response.data[0].b64_json
-    if not b64_data:
-        raise ValueError("La risposta API non contiene dati immagine.")
-    return base64.b64decode(b64_data)
+    # Cerca il risultato nell'output della risposta
+    for item in response.output:
+        if getattr(item, "type", None) == "image_generation_call":
+            result = getattr(item, "result", None)
+            if result:
+                return base64.b64decode(result)
+
+    raise ValueError("La risposta API non contiene immagini generate.")
 
 
 def save_result(image_bytes: bytes, out_path: Path) -> None:
