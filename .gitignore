@@ -4,6 +4,9 @@
 # Python
 __pycache__/
 *.py[cod]
+
+# Configurazione locale (contiene API key — non committare mai)
+.env
 .venv/
 env/
 venv/
