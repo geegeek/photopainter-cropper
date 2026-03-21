@@ -1,4 +1,4 @@
 Pillow>=10.0.0
 
-# Dipendenza opzionale — necessaria solo per FotoPainterProProfessionalChatGPT.py
+# Dipendenza opzionale — necessaria solo per photo_painter_cropperChatGPTProfessional.py
 openai>=1.0.0
