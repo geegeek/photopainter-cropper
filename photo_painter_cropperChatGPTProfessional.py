@@ -50,20 +50,14 @@ from PIL import Image, ImageTk
 # ════════════════════════════════════════════════════════════════════════════
 
 PROFESSIONAL_PROMPT = """
-Reprocess this photo as if taken by a professional photographer with a \
-full-frame DSLR (Canon EOS R5 or Sony A7 IV) and a prime lens. Apply \
-professional studio or golden-hour lighting matching the original scene.
+Ricrea questa foto come se fosse scattata da una macchina fotografica \
+professionale da un fotografo professionista, senza alterare minimamente \
+i volti e le posizioni delle persone in foto.
 
-Strict constraints:
-- Do NOT alter any human face. Preserve every facial feature exactly as \
-in the original.
-- Do NOT change the position or posture of any person.
-- Do NOT add, remove, or reinterpret any element of the scene.
-- Keep blurry areas blurry — do not invent detail.
-- Improve only: sharpness, dynamic range, color grading, noise reduction, \
-lighting quality.
-- The result must feel like the same moment with better equipment, not a \
-reinterpretation.
+Migliora solo: nitidezza, gamma dinamica, color grading, riduzione del \
+rumore e qualità della luce. Non aggiungere, rimuovere o reinterpretare \
+alcun elemento della scena. Il risultato deve sembrare lo stesso momento \
+con attrezzatura migliore, non una reinterpretazione.
 """.strip()
 
 # ════════════════════════════════════════════════════════════════════════════
@@ -89,9 +83,10 @@ CHATGPT_SUFFIX = "_chatgpt"
 LOG_FILENAME = "chatgpt_pro_session.log"
 
 # Modello OpenAI per l'editing delle immagini.
-# dall-e-2 è il modello supportato dall'endpoint images.edit().
-# Dimensioni valide: "256x256" | "512x512" | "1024x1024"
-OPENAI_IMAGE_MODEL = "dall-e-2"
+# gpt-image-1 è il modello usato da ChatGPT: capisce l'immagine originale
+# e la migliora senza stravolgerla, a differenza di dall-e-2 che la rigenera.
+# Dimensioni valide: "1024x1024" | "1536x1024" | "1024x1536" | "auto"
+OPENAI_IMAGE_MODEL = "gpt-image-1"
 OPENAI_OUTPUT_SIZE = "1024x1024"
 
 # Finestra minima
@@ -217,69 +212,40 @@ def get_chatgpt_output_path(export_folder: Path, basename: str) -> Path:
 
 
 # ────────────────────────────────────────────────────────────────────────────
-#  API OPENAI (flusso sincrono) — dall-e-2
+#  API OPENAI (flusso sincrono) — gpt-image-1
 # ────────────────────────────────────────────────────────────────────────────
 #
-#  dall-e-2 images.edit() richiede:
-#    • image : PNG quadrato RGBA, max 4 MB
-#    • mask  : PNG quadrato RGBA — aree trasparenti = aree da rielaborare
-#  Usiamo una mask completamente trasparente per applicare il prompt
-#  all'intera immagine, e centra il ritaglio (non quadrato) su sfondo bianco.
+#  gpt-image-1 images.edit() richiede:
+#    • image : file PNG/JPEG/WEBP, max 25 MB (non deve essere quadrato)
+#  NON richiede mask e NON supporta response_format: restituisce sempre base64.
+#  Il modello capisce l'immagine originale e applica solo le modifiche richieste.
 
-def _prepare_image_and_mask(crop_path: Path) -> tuple:
+def _prepare_image(crop_path: Path) -> io.BytesIO:
     """
-    Converte il ritaglio JPEG in un PNG 1024×1024 RGBA centrato su sfondo bianco
-    e genera la mask corrispondente (completamente trasparente = ritocca tutto).
-    Restituisce (image_buffer, mask_buffer) pronti per l'API.
+    Converte il ritaglio JPEG in PNG e restituisce un buffer pronto per l'API.
+    gpt-image-1 non richiede dimensioni quadrate né canale alpha.
     """
-    SIZE = 1024
-
-    # Carica e porta in RGBA
-    src = Image.open(crop_path).convert("RGBA")
-    iw, ih = src.size
-
-    # Scala mantenendo le proporzioni, centrata su 1024×1024
-    scale  = min(SIZE / iw, SIZE / ih)
-    new_w  = max(1, int(iw * scale))
-    new_h  = max(1, int(ih * scale))
-    scaled = src.resize((new_w, new_h), Image.LANCZOS)
-
-    # Sfondo bianco opaco
-    canvas = Image.new("RGBA", (SIZE, SIZE), (255, 255, 255, 255))
-    ox = (SIZE - new_w) // 2
-    oy = (SIZE - new_h) // 2
-    canvas.paste(scaled, (ox, oy))
-
+    src = Image.open(crop_path).convert("RGB")
     img_buf = io.BytesIO()
-    canvas.save(img_buf, format="PNG")
+    src.save(img_buf, format="PNG")
     img_buf.seek(0)
     img_buf.name = "image.png"   # l'SDK OpenAI usa il nome per il MIME type
-
-    # Mask: tutto trasparente → dall-e-2 rielabora l'intera area con il prompt
-    mask = Image.new("RGBA", (SIZE, SIZE), (0, 0, 0, 0))
-    mask_buf = io.BytesIO()
-    mask.save(mask_buf, format="PNG")
-    mask_buf.seek(0)
-    mask_buf.name = "mask.png"
-
-    return img_buf, mask_buf
+    return img_buf
 
 
 def send_to_openai(client, crop_path: Path) -> bytes:
     """
-    Invia il ritaglio alle API OpenAI (dall-e-2) con il PROFESSIONAL_PROMPT.
+    Invia il ritaglio alle API OpenAI (gpt-image-1) con il PROFESSIONAL_PROMPT.
     Attende la risposta (bloccante) e restituisce i byte dell'immagine.
     Lancia eccezione in caso di errore.
     """
-    img_buf, mask_buf = _prepare_image_and_mask(crop_path)
+    img_buf = _prepare_image(crop_path)
 
     response = client.images.edit(
         model=OPENAI_IMAGE_MODEL,
         image=img_buf,
-        mask=mask_buf,
         prompt=PROFESSIONAL_PROMPT,
         size=OPENAI_OUTPUT_SIZE,
-        response_format="b64_json",
         n=1,
     )
 
@@ -503,7 +469,7 @@ class ReviewerApp:
 
         # feedback immediato prima di bloccare il thread UI
         self._set_status(
-            f"Invio a OpenAI ({OPENAI_IMAGE_MODEL})… attendere.",
+            f"Invio a OpenAI ({OPENAI_IMAGE_MODEL})… può richiedere 20-40 secondi.",
             self.FG_WARN
         )
         self.info_lbl.config(text=f"  Elaborazione: {entry.basename}  —  non chiudere la finestra")
