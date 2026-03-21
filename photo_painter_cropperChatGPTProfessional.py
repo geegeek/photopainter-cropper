@@ -50,14 +50,8 @@ from PIL import Image, ImageTk
 # ════════════════════════════════════════════════════════════════════════════
 
 PROFESSIONAL_PROMPT = """
-Ricrea questa foto come se fosse scattata da una macchina fotografica \
-professionale da un fotografo professionista, senza alterare minimamente \
-i volti e le posizioni delle persone in foto.
-
-Migliora solo: nitidezza, gamma dinamica, color grading, riduzione del \
-rumore e qualità della luce. Non aggiungere, rimuovere o reinterpretare \
-alcun elemento della scena. Il risultato deve sembrare lo stesso momento \
-con attrezzatura migliore, non una reinterpretazione.
+Ricrea questa foto come se fosse scattata da un fotografo con una macchina \
+fotografica professionale, senza alterare minimamente i volti delle persone.
 """.strip()
 
 # ════════════════════════════════════════════════════════════════════════════
