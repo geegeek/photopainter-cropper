@@ -94,6 +94,50 @@ Typical workflow:
 2.  Convert JPG → **24-bit BMP** using the official Waveshare converter.
 3.  Copy BMPs to the SD card.
 
+## Batch Conversion to 7-color BMP (parallel)
+
+`converterTo7color_all.sh` runs Waveshare's `convert` over a whole folder.
+`convert` is a PyInstaller bundle: each invocation unpacks its archive and
+boots a Python interpreter before touching a pixel, and the conversion itself
+is single threaded — so converting 2000 photos one by one leaves most of the
+CPU idle. The script keeps **N conversions running at the same time** and
+starts the next image as soon as one finishes, which on a modern Mac is
+roughly N times faster (with N = number of cores).
+
+``` bash
+# drop the script next to the `convert` binary, then:
+./converterTo7color_all.sh              # every image in this folder, all cores
+./converterTo7color_all.sh -i ~/Pictures/pp -j 8
+./converterTo7color_all.sh -r -m cut    # recursive, crop instead of scale+pad
+./converterTo7color_all.sh -h           # all the options
+```
+
+| Option | Meaning |
+|---|---|
+| `-i DIR` | folder with the images (default: current folder) |
+| `-c PATH` | path to the `convert` executable (default: `./convert`, then `DIR/convert`) |
+| `-j N` | parallel jobs (default: number of CPU cores) |
+| `-m scale\|cut` | scale-and-pad (default) or crop |
+| `-d landscape\|portrait` | force orientation (default: from image size) |
+| `-D 0\|3` | dithering: none or Floyd-Steinberg |
+| `-r` | recurse into sub-folders |
+| `-f` | re-convert images that already have an up-to-date BMP |
+| `-n` | dry run: list what would be converted |
+| `-q` | quiet: only the final summary |
+
+Each output is written next to its source as `<name>_<mode>_output.bmp`.
+Other things the script takes care of, on top of the parallelism:
+
+- **Resume**: images whose BMP is already there and newer are skipped, so an
+  interrupted batch can just be re-run (`-f` forces a redo).
+- Its **own outputs are never re-converted** (`*_scale_output.bmp`,
+  `*_cut_output.bmp`), and neither are the `._name.jpg` AppleDouble files that
+  SD cards collect.
+- Filenames with spaces, quotes or accents are handled, and `.JPG`/`.PNG` in
+  uppercase are found too.
+- Live progress with ETA, and a final summary listing the failed images with
+  the converter's own error output (exit code 1 if anything failed).
+
 ## Samples and Outputs Included
 
 - Example **input** photos (both portrait and landscape) live under
