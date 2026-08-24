@@ -138,6 +138,52 @@ Other things the script takes care of, on top of the parallelism:
 - Live progress with ETA, and a final summary listing the failed images with
   the converter's own error output (exit code 1 if anything failed).
 
+## Verifying an Alternative Converter (bit-exact)
+
+If you write your own converter (a script, a faster tool, a rewrite in another
+language) the only thing that matters is that the BMP it produces is **the same
+file** as the one Waveshare's `convert` produces. `tools/verify_converter.py`
+proves it: it runs both converters on the same images in two separate sandbox
+folders and compares the results with SHA-256.
+
+``` bash
+tools/verify_converter.py -i _export_photopainter_jpg \
+    -c ./convert --cand-cmd './mio_script.sh {in}'
+```
+
+`{in}` is replaced by the input image; add `{out}` to the template if your tool
+takes an explicit output path, otherwise whatever new file it writes is picked
+up automatically (so a different output naming is fine).
+
+Useful options: `-n N` (test only N images first), `-j N` (parallel), `--csv
+report.csv` (per-file report with both hashes), `--keep DIR` (save the pairs
+that differ so you can look at them), `-r` (recursive), `--ref-args '--mode
+cut'`.
+
+Before comparing anything it checks that the **reference itself is
+deterministic** (same input twice → same bytes); if it were not, a bit-exact
+comparison would be meaningless.
+
+When two outputs differ, the report says what kind of difference it is:
+
+| Verdict | Meaning |
+|---|---|
+| `size` | different dimensions: the geometry/resize stage differs |
+| `palette` | the candidate emits colours that are not the 7 device colours |
+| `sparse` | <0.5% of pixels: an upstream rounding difference (decoding/resize) |
+| `dither` | many pixels, all device colours: the dithering / nearest-colour search differs |
+
+To tell an upstream decoding difference from a real algorithm difference, re-run
+with `--lossless-probe`: every source image is first re-encoded to PNG (which any
+decoder decodes identically), so if the outputs match on PNG but not on the
+original JPEGs, the JPEG decoder is the culprit, not the conversion.
+
+A `PASS` means every BMP you would copy to the SD card is identical, bit for
+bit, to the official converter's output — for **those** files. It is empirical
+proof about your corpus, not a proof for every possible future image: keep the
+harness around and re-run it whenever the converter, a library, or the machine
+changes.
+
 ## Samples and Outputs Included
 
 - Example **input** photos (both portrait and landscape) live under
