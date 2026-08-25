@@ -234,6 +234,27 @@ it. When the sources are already 800×480 the framing step does nothing, so many
 recipes tie and the report says so: what is being proved there is the
 quantisation step.
 
+## Converging on Every Photo
+
+`tools/tune_recipe.py` runs the search over the **whole** corpus instead of a
+sample, and refines as it goes:
+
+``` bash
+tools/tune_recipe.py -i foto -b bmporiginali -j 8 --csv esito.csv
+```
+
+Round 1 converts every photo with the current recipe and compares the result
+with the official BMP by SHA-256. For each photo that does not match, round 2
+searches the entire recipe space for the ones that reproduce *that* photo
+exactly and keeps only those also consistent with the photos already checked;
+if the surviving recipe changed, it starts over. It stops when one recipe
+reproduces every photo, or when it can prove none does.
+
+Nothing is averaged: a recipe counts only if it is byte-exact. The final report
+gives the best recipe tried (not merely the last), the photos no recipe can
+reproduce — usually a BMP made from a re-cropped version of the photo — and, if
+the corpus turns out to be inconsistent, how the photos split between recipes.
+
 ## Samples and Outputs Included
 
 - Example **input** photos (both portrait and landscape) live under
