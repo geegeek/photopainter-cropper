@@ -157,9 +157,9 @@ PAL256 = _pal_image(DEVICE_PALETTE + (0, 0, 0) * 249)   # what the official tool
 PAL7 = _pal_image(DEVICE_PALETTE)                       # the "obvious" 7-entry palette
 
 
-def quantise_variants(frame):
+def quantise_variants(frame, only=None):
     """name -> final RGB image, for every plausible way of reaching 7 colours."""
-    out = {}
+    out = _Variants(only)
     FS = Image.Dither.FLOYDSTEINBERG
     NONE = Image.Dither.NONE
     out["quantize FS, 256-entry palette (official)"] = frame.quantize(dither=FS, palette=PAL256).convert("RGB")
@@ -345,7 +345,7 @@ def main():
             if frame is None:
                 bad += 1
                 continue
-            result = quantise_variants(frame)[qname]
+            result = quantise_variants(frame, only=qname)[qname]
             if hashlib.sha256(bmp_bytes(result)).hexdigest() != \
                hashlib.sha256(open(ref_idx[k], "rb").read()).hexdigest():
                 bad += 1
