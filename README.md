@@ -234,6 +234,39 @@ it. When the sources are already 800×480 the framing step does nothing, so many
 recipes tie and the report says so: what is being proved there is the
 quantisation step.
 
+## JavaScript Port
+
+`tools/js/photopainter.js` produces the same bytes as the official converter
+from Node, for images already at the target size:
+
+``` bash
+npm install sharp
+node tools/js/photopainter.js /path/to/folder
+```
+
+The dithering is a line-by-line port of Pillow's `libImaging`
+(`Convert.c topalette()` and `Palette.c ImagingPaletteCacheUpdate()`), quirks
+included: integer error terms, division truncated toward zero, nearest colour
+looked up on coordinates quantised to multiples of 4, first palette index
+winning a tie. It is verified against Pillow on 18,417,111 pixels — including
+**all 16,777,216 RGB colours** — with zero differences, and end to end against
+the official BMPs in `_export_photopainter_jpg/`: 9 files out of 9
+byte-identical.
+
+Two constraints are not negotiable:
+
+- **The JPEG must be decoded by libjpeg-turbo.** `sharp` (libvips) is verified
+  bit-identical to Pillow here; the pure-JS `jpeg-js` is not — up to 27 per
+  channel, ~88% of pixels different — so it must not be used.
+- **No resizing in JavaScript.** Pillow's resampler would have to be ported and
+  verified too, so the script refuses an image that is not already 800×480
+  (or 480×800) rather than silently producing different pixels. The cropper's
+  `*_pp.jpg` exports are already at that size.
+
+Speed per photo, measured: 8 ms decode, 35 ms dithering, 4 ms BMP write. The
+dithering is ~4× slower than Pillow's C, so the Python converter remains the
+faster option for a large batch.
+
 ## Reverse-engineering the Conversion
 
 `tools/reverse_convert.py` answers the question from scratch: given the photos
