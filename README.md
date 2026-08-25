@@ -143,8 +143,23 @@ Other things the script takes care of, on top of the parallelism:
 If you write your own converter (a script, a faster tool, a rewrite in another
 language) the only thing that matters is that the BMP it produces is **the same
 file** as the one Waveshare's `convert` produces. `tools/verify_converter.py`
-proves it: it runs both converters on the same images in two separate sandbox
-folders and compares the results with SHA-256.
+proves it, comparing the outputs with SHA-256. It works in two ways.
+
+**A — you already have the two sets of BMPs**, one folder per converter:
+
+``` bash
+tools/verify_converter.py --ref-dir bmporiginali --cand-dir bmp --csv report.csv
+```
+
+Files are paired by name, ignoring each converter's suffixes
+(`foto_pp_scale_output.bmp` pairs with `foto_pp.bmp`). If your converter uses a
+suffix of its own the tool detects it and tells you (`--strip _mio` makes it
+explicit). Folders with a different number of files are fine: the pairs are
+compared, and everything present on one side only is listed instead of being
+silently skipped.
+
+**B — you have the source images** and want the harness to run both converters
+itself, each in its own sandbox:
 
 ``` bash
 tools/verify_converter.py -i _export_photopainter_jpg \
@@ -155,12 +170,15 @@ tools/verify_converter.py -i _export_photopainter_jpg \
 takes an explicit output path, otherwise whatever new file it writes is picked
 up automatically (so a different output naming is fine).
 
-Useful options: `-n N` (test only N images first), `-j N` (parallel), `--csv
-report.csv` (per-file report with both hashes), `--keep DIR` (save the pairs
-that differ so you can look at them), `-r` (recursive), `--ref-args '--mode
-cut'`.
+Useful options: `-n N` (test only N files first), `-j N` (parallel), `--csv
+report.csv` (per-file report with both hashes, including the unpaired files),
+`--keep DIR` (save the pairs that differ so you can look at them), `-r`
+(recursive), `--ref-args '--mode cut'` (mode B only).
 
-Before comparing anything it checks that the **reference itself is
+Exit code: `0` everything identical, `2` all pairs identical but some files
+existed on one side only, `1` real differences (or errors).
+
+In mode B, before comparing anything, it checks that the **reference itself is
 deterministic** (same input twice → same bytes); if it were not, a bit-exact
 comparison would be meaningless.
 

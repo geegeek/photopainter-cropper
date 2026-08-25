@@ -15,7 +15,19 @@ is, which is what tells you where the bug lives.
     many pixels, all of       -> the dithering differs (the usual case for a
       them palette colours       from-scratch Floyd-Steinberg rewrite)
 
-Usage:
+Two ways to use it:
+
+A) you already have the two sets of BMPs, in two folders:
+
+    tools/verify_converter.py --ref-dir bmporiginali --cand-dir bmp
+
+   Files are paired by name, ignoring the converter's suffixes
+   (`foto_pp_scale_output.bmp` pairs with `foto_pp.bmp`, `foto_pp_mio.bmp`,
+   ...). Anything that cannot be paired is listed, never silently skipped.
+
+B) you have the source images and want the harness to run both converters
+   itself, each in its own sandbox:
+
     tools/verify_converter.py -i FOLDER --cand-cmd './mio_script.sh {in}'
     tools/verify_converter.py -i FOLDER --cand-cmd 'python3 mio.py {in} -o {out}'
     tools/verify_converter.py -i FOLDER -c ./convert --ref-args '--mode cut' \\
@@ -138,6 +150,86 @@ def compare_bmp(ref_path, cand_path):
             "maxdelta": maxdelta, "first": first}
 
 
+# ------------------------------------------------------------------- pairing
+STRIP_SUFFIXES = ("_scale_output", "_cut_output", "_output")
+
+
+def pair_key(filename, extra_strip=()):
+    """Name used to pair a reference BMP with a candidate BMP.
+
+    Both converters usually decorate the name of the source image, each in its
+    own way, so the common part is what is left after removing the suffixes.
+    """
+    stem = os.path.splitext(os.path.basename(filename))[0]
+    changed = True
+    while changed:
+        changed = False
+        for suf in tuple(extra_strip) + STRIP_SUFFIXES:
+            if suf and stem.lower().endswith(suf.lower()):
+                stem = stem[:-len(suf)]
+                changed = True
+    return stem.lower()
+
+
+def index_bmps(folder, extra_strip, recursive):
+    """Map pair_key -> path for every BMP in a folder. Returns (index, dupes)."""
+    index, dupes = {}, []
+    for root, dirs, names in os.walk(folder):
+        for n in sorted(names):
+            if not n.lower().endswith(".bmp") or n.startswith("._"):
+                continue
+            key = pair_key(n, extra_strip)
+            path = os.path.join(root, n)
+            if key in index:
+                dupes.append((key, index[key], path))
+            else:
+                index[key] = path
+        if not recursive:
+            break
+    return index, dupes
+
+
+def autodetect_strip(cand_keys, ref_keys):
+    """Guess the suffix your converter appends, when nothing pairs as-is.
+
+    Returns (suffix, how_many_files_it_pairs) or ("", 0).
+    """
+    seeds = list(cand_keys)[:50]
+    tried = set()
+    for k in seeds:
+        for length in range(1, min(40, len(k))):
+            tried.add(k[-length:])
+    best, best_n = "", 0
+    for suf in tried:
+        n = sum(1 for k in cand_keys if k.endswith(suf) and k[:-len(suf)] in ref_keys)
+        if n > best_n or (n == best_n and n and len(suf) < len(best)):
+            best, best_n = suf, n
+    return best, best_n
+
+
+def compare_existing(job):
+    """Compare one already-converted pair of BMPs."""
+    key, ref_path, cand_path, keep_dir = job
+    result = {"file": os.path.basename(cand_path), "status": "", "detail": "",
+              "ref_sha": sha256(ref_path), "cand_sha": sha256(cand_path)}
+    if result["ref_sha"] == result["cand_sha"]:
+        result["status"] = "identical"
+        return result
+    info = compare_bmp(ref_path, cand_path)
+    result["status"] = "DIFFERENT/" + info["kind"]
+    result["detail"] = info["detail"]
+    if info.get("first"):
+        x, y, pa, pb = info["first"]
+        result["detail"] += f"; first at ({x},{y}) ref={pa} cand={pb}"
+    if keep_dir:
+        dest = os.path.join(keep_dir, key)
+        os.makedirs(dest, exist_ok=True)
+        shutil.copy2(ref_path, os.path.join(dest, "reference.bmp"))
+        shutil.copy2(cand_path, os.path.join(dest, "candidate.bmp"))
+        result["detail"] += f"; saved in {dest}"
+    return result
+
+
 # -------------------------------------------------------------------- runners
 def _new_output(workdir, before, source_name):
     after = set(os.listdir(workdir))
@@ -241,17 +333,134 @@ def check_determinism(src, ref_bin, ref_args):
     return shas[0] == shas[1], shas[0]
 
 
+# ------------------------------------------------------- mode A: two folders
+def compare_dirs(args):
+    for d in (args.ref_dir, args.cand_dir):
+        if not os.path.isdir(d):
+            sys.exit(f"folder not found: {d}")
+
+    ref_index, ref_dupes = index_bmps(args.ref_dir, args.strip, args.recursive)
+    cand_index, cand_dupes = index_bmps(args.cand_dir, args.strip, args.recursive)
+
+    for label, dupes in (("reference", ref_dupes), ("candidate", cand_dupes)):
+        for key, first, second in dupes:
+            print(f"WARNING: two {label} files pair to the same name '{key}':\n"
+                  f"         {first}\n         {second}\n"
+                  f"         only the first is compared; use --strip to disambiguate")
+
+    if not set(ref_index) & set(cand_index):
+        # The two converters decorate the names differently: work out how.
+        suf, n = autodetect_strip(set(cand_index), set(ref_index))
+        if n:
+            print(f"Names do not match as-is: detected the candidate suffix '{suf}' "
+                  f"({n} files pair with it). Pass --strip {suf} to make it explicit.\n")
+            cand_index = {(k[:-len(suf)] if k.endswith(suf) and k[:-len(suf)] in ref_index
+                           else k): v for k, v in cand_index.items()}
+        else:
+            suf, n = autodetect_strip(set(ref_index), set(cand_index))
+            if n:
+                print(f"Names do not match as-is: detected the reference suffix '{suf}' "
+                      f"({n} files pair with it).\n")
+                ref_index = {(k[:-len(suf)] if k.endswith(suf) and k[:-len(suf)] in cand_index
+                              else k): v for k, v in ref_index.items()}
+
+    keys = sorted(set(ref_index) & set(cand_index))
+    only_ref = sorted(set(ref_index) - set(cand_index))
+    only_cand = sorted(set(cand_index) - set(ref_index))
+    if args.limit:
+        keys = keys[:args.limit]
+
+    print(f"Reference : {args.ref_dir}  ({len(ref_index)} BMP)")
+    print(f"Candidate : {args.cand_dir}  ({len(cand_index)} BMP)")
+    print(f"Pairs     : {len(keys)}  (jobs: {args.jobs})\n")
+    if not keys:
+        sys.exit("no file could be paired between the two folders: check the names, "
+                 "or add --strip SUFFIX for your converter's own suffix")
+
+    keep = os.path.abspath(args.keep) if args.keep else None
+    if keep:
+        os.makedirs(keep, exist_ok=True)
+
+    jobs = [(k, ref_index[k], cand_index[k], keep) for k in keys]
+    results, counters = [], {}
+    width = len(str(len(keys)))
+    with ProcessPoolExecutor(max_workers=args.jobs) as pool:
+        for i, res in enumerate(pool.map(compare_existing, jobs), 1):
+            results.append(res)
+            counters[res["status"]] = counters.get(res["status"], 0) + 1
+            flag = "ok  " if res["status"] == "identical" else "DIFF"
+            line = f"[{i:{width}d}/{len(keys)}] {flag} {res['file']}"
+            if res["status"] != "identical":
+                line += f"\n           -> {res['status']}: {res['detail']}"
+            print(line, flush=True)
+
+    print("\n" + "-" * 70)
+    for status, n in sorted(counters.items()):
+        print(f"{status:24s} {n}")
+    if only_ref:
+        print(f"{'only in reference':24s} {len(only_ref)}")
+    if only_cand:
+        print(f"{'only in candidate':24s} {len(only_cand)}")
+    print("-" * 70)
+
+    if only_ref or only_cand:
+        print("\nNot compared, present on one side only "
+              f"({len(only_ref) + len(only_cand)} file(s)):")
+        for label, names, index in (("reference", only_ref, ref_index),
+                                    ("candidate", only_cand, cand_index)):
+            for k in names[:10]:
+                print(f"  only in {label}: {os.path.basename(index[k])}")
+            if len(names) > 10:
+                print(f"  ... and {len(names) - 10} more only in {label}"
+                      f"{' (full list in the CSV)' if args.csv else ''}")
+        for label, names, index in (("only-in-reference", only_ref, ref_index),
+                                    ("only-in-candidate", only_cand, cand_index)):
+            for k in names:
+                results.append({"file": os.path.basename(index[k]), "status": label,
+                                "detail": "not compared: no matching file in the other folder",
+                                "ref_sha": "", "cand_sha": ""})
+
+    if args.csv:
+        import csv as _csv
+        with open(args.csv, "w", newline="") as fh:
+            w = _csv.DictWriter(fh, fieldnames=["file", "status", "detail", "ref_sha", "cand_sha"])
+            w.writeheader()
+            w.writerows(results)
+        print(f"report written to {args.csv}")
+
+    identical = counters.get("identical", 0)
+    unpaired = len(only_ref) + len(only_cand)
+    if identical == len(keys) and not unpaired:
+        print(f"\nPASS - {identical}/{len(keys)} BMPs are byte-identical to the official "
+              f"converter's ones.\nEvery file you would copy to the SD card is the same "
+              f"file, bit for bit.")
+        return 0
+    if identical == len(keys):
+        print(f"\nPASS with warnings - all {identical} paired BMPs are byte-identical to the "
+              f"official converter's ones.\n{unpaired} file(s) exist on one side only and "
+              f"were not compared (exit code 2).")
+        return 2
+    print(f"\nFAIL - {len(keys) - identical}/{len(keys)} BMPs differ from the official "
+          f"converter's ones.")
+    return 1
+
+
 # ------------------------------------------------------------------------ main
 def main():
     ap = argparse.ArgumentParser(
         description="Compare an alternative converter against Waveshare's official one.",
         formatter_class=argparse.RawDescriptionHelpFormatter, epilog=__doc__)
-    ap.add_argument("-i", "--images", required=True, help="folder with the source images")
+    ap.add_argument("--ref-dir", help="folder with the BMPs produced by the official converter")
+    ap.add_argument("--cand-dir", help="folder with the BMPs produced by your own converter")
+    ap.add_argument("--strip", action="append", default=[], metavar="SUFFIX",
+                    help="extra name suffix to ignore when pairing files (repeatable), "
+                         "e.g. --strip _mio")
+    ap.add_argument("-i", "--images", help="folder with the source images (run-both mode)")
     ap.add_argument("-c", "--convert", default="./convert", help="official convert binary")
     ap.add_argument("--ref-args", default="", help="extra args for the reference, e.g. '--mode cut'")
-    ap.add_argument("--cand-cmd", required=True,
+    ap.add_argument("--cand-cmd",
                     help="candidate command; {in} = input file, {out} = optional output path")
-    ap.add_argument("-n", "--limit", type=int, default=0, help="test only the first N images")
+    ap.add_argument("-n", "--limit", type=int, default=0, help="test only the first N files")
     ap.add_argument("-j", "--jobs", type=int, default=os.cpu_count() or 4)
     ap.add_argument("--csv", help="write a per-file report to this CSV")
     ap.add_argument("--keep", metavar="DIR", help="save the BMP pairs that differ into DIR")
@@ -262,6 +471,13 @@ def main():
                          "match here but not on the original JPEGs, the JPEG decoder is the "
                          "culprit, not the conversion algorithm. Needs Pillow.")
     args = ap.parse_args()
+
+    if args.ref_dir or args.cand_dir:
+        if not (args.ref_dir and args.cand_dir):
+            sys.exit("--ref-dir and --cand-dir must be used together")
+        return compare_dirs(args)
+    if not args.images or not args.cand_cmd:
+        sys.exit("either --ref-dir/--cand-dir, or -i IMAGES with --cand-cmd. See -h")
 
     if not os.path.isfile(args.convert):
         sys.exit(f"reference converter not found: {args.convert}")
