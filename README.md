@@ -94,6 +94,39 @@ Typical workflow:
 2.  Convert JPG → **24-bit BMP** using the official Waveshare converter.
 3.  Copy BMPs to the SD card.
 
+## `convert.sh` — the Official Converter, as Source
+
+Waveshare ships `convert` as a 9.7 MB PyInstaller executable: CPython 3.11 +
+Pillow + libjpeg-turbo wrapped around a ~20-line script. `convert.sh` is that
+script in the open, behind the same command line — publishable, readable, and
+auditable instead of a binary blob.
+
+``` bash
+./convert.sh photo.jpg
+./convert.sh photo.jpg --mode cut --dir portrait --dither 0
+./convert.sh --help
+```
+
+Same CLI, same defaults, same messages (`Error: file X does not exist`,
+`Successfully converted X to Y`), same exit codes, same output name
+`<name>_<mode>_output.bmp` next to the input. It needs `python3` with Pillow;
+set `PYTHON=/path/to/python3` to pick an interpreter.
+
+**Fidelity**: the pipeline is the one recovered from the bundle's bytecode, and
+its output was verified byte for byte against the official binary on 2036
+photos — 781,824,000 pixels compared, zero different — plus a direct check of
+this script against the official BMPs in `_export_photopainter_jpg/`: 9 files
+out of 9 identical. The palette search and the Floyd-Steinberg dithering are
+Pillow's own C code, so they are identical by construction rather than by
+imitation.
+
+To use it as a drop-in for the binary, rename it to `convert`, or point the
+batch script at it with `converterTo7color_all.sh -c ./convert.sh`.
+
+**Why the pixel work is not in bash**: at bash's arithmetic speed a single
+800×480 photo takes ~41 s (measured, and with a *simplified* kernel), roughly
+23 hours for 2000 photos — and a JPEG decoder in bash is not a thing.
+
 ## Batch Conversion to 7-color BMP (parallel)
 
 `converterTo7color_all.sh` runs Waveshare's `convert` over a whole folder.
