@@ -53,7 +53,7 @@ STRIP = ("_scale_output", "_cut_output", "_output", "_pp")
 
 # ----------------------------------------------------------------- BMP reader
 def read_bmp(path):
-    """Return (width, height, RGB bytes, top-down) for a 24-bit BMP."""
+    """Return (width, height, RGB bytes) for a 24-bit BMP, row 0 first."""
     import struct
     with open(path, "rb") as fh:
         data = fh.read()
@@ -68,6 +68,17 @@ def read_bmp(path):
     bottom_up = height > 0
     height = abs(height)
     stride = (width * 3 + 3) & ~3
+    need = offset + stride * height
+    if len(data) < need:
+        raise ValueError("truncated BMP")
+
+    if np is not None:
+        rows = np.frombuffer(data[offset:need], dtype=np.uint8).reshape(height, stride)
+        rows = rows[:, :width * 3].reshape(height, width, 3)[:, :, ::-1]  # BGR -> RGB
+        if bottom_up:
+            rows = rows[::-1]
+        return width, height, rows.tobytes()
+
     out = bytearray()
     for y in range(height):
         src = height - 1 - y if bottom_up else y
@@ -75,6 +86,34 @@ def read_bmp(path):
         for x in range(width):
             out += line[x * 3 + 2:x * 3 + 3] + line[x * 3 + 1:x * 3 + 2] + line[x * 3:x * 3 + 1]
     return width, height, bytes(out)
+
+
+def pixel_report(got, ref, width):
+    """Compare two RGB byte strings pixel by pixel.
+
+    Returns (differing pixels, total pixels, largest channel delta,
+    (x, y) of the first difference).
+    """
+    total = len(ref) // 3
+    if got == ref:
+        return 0, total, 0, None
+    if np is not None:
+        a = np.frombuffer(got, dtype=np.uint8).reshape(-1, 3).astype(np.int16)
+        b = np.frombuffer(ref, dtype=np.uint8).reshape(-1, 3).astype(np.int16)
+        bad = (a != b).any(axis=1)
+        idx = int(np.argmax(bad))
+        return (int(bad.sum()), total, int(np.abs(a - b).max()),
+                (idx % width, idx // width))
+    nd = maxd = 0
+    first = None
+    for i in range(total):
+        pa, pb = got[i * 3:i * 3 + 3], ref[i * 3:i * 3 + 3]
+        if pa != pb:
+            nd += 1
+            maxd = max(maxd, max(abs(x - y) for x, y in zip(pa, pb)))
+            if first is None:
+                first = (i % width, i // width)
+    return nd, total, maxd, first
 
 
 # ------------------------------------------------------------ geometry stages

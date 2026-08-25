@@ -38,12 +38,27 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 try:
     from find_exact_recipe import (geometry_variants, quantise_variants, read_bmp,
                                    index_folder, diff_stats, bmp_bytes, recipe_code,
-                                   IMAGE_EXT)
+                                   pixel_report, IMAGE_EXT)
     import PIL
 except ImportError as exc:
     sys.exit(f"find_exact_recipe.py must sit next to this script ({exc})")
 
 OFFICIAL = ("scale (official)", "quantize FS, 256-entry palette (official)")
+
+
+def build_one(src, tw, th, gname, qname):
+    """Build this photo with one recipe, whatever version of the sibling file is
+    installed (`only=` is an optimisation added later; fall back without it)."""
+    try:
+        frame = geometry_variants(src, tw, th, only=gname).get(gname)
+    except TypeError:
+        frame = geometry_variants(src, tw, th).get(gname)
+    if frame is None:
+        return None
+    try:
+        return quantise_variants(frame, only=qname)[qname]
+    except TypeError:
+        return quantise_variants(frame)[qname]
 
 
 def bmp_target_size(path):
@@ -64,18 +79,26 @@ def sha_file(path):
 
 # --------------------------------------------------------------- round 1 test
 def check_one(job):
-    """Does `recipe` reproduce this photo's official BMP byte for byte?"""
+    """Convert this photo and compare EVERY pixel with the official BMP.
+
+    The file hash is checked too, so a difference in the BMP header cannot hide
+    behind identical pixels (or the other way round).
+    """
     key, src, ref, gname, qname = job
     try:
-        tw, th = bmp_target_size(ref)
-        frame = geometry_variants(src, tw, th, only=gname).get(gname)
-        if frame is None:
-            return key, False, "recipe not applicable to this image"
-        result = quantise_variants(frame, only=qname)[qname]
-        ok = hashlib.sha256(bmp_bytes(result)).hexdigest() == sha_file(ref)
-        return key, ok, ""
+        tw, th, ref_rgb = read_bmp(ref)
+        result = build_one(src, tw, th, gname, qname)
+        if result is None:
+            return key, False, 0, 0, 0, None, False, "recipe not applicable to this image"
+        got = result.tobytes()
+        if len(got) != len(ref_rgb):
+            return (key, False, tw * th, tw * th, 255, (0, 0), False,
+                    f"different size: {result.size} vs {(tw, th)}")
+        nd, total, maxd, first = pixel_report(got, ref_rgb, tw)
+        file_ok = hashlib.sha256(bmp_bytes(result)).hexdigest() == sha_file(ref)
+        return key, (nd == 0 and file_ok), nd, total, maxd, first, file_ok, ""
     except Exception as exc:
-        return key, False, f"{type(exc).__name__}: {exc}"
+        return key, False, 0, 0, 0, None, False, f"{type(exc).__name__}: {exc}"
 
 
 # ------------------------------------------------------- round 2 full search
@@ -124,6 +147,16 @@ def main():
     print(f"Pillow {PIL.__version__} | photos paired: {len(keys)} | workers: {args.jobs}")
     print(f"Starting recipe: {OFFICIAL[0]}  +  {OFFICIAL[1]}\n")
 
+    probe = check_one((keys[0], src_idx[keys[0]], ref_idx[keys[0]], *OFFICIAL))
+    _, p_ok, p_nd, p_total, p_maxd, p_first, p_file, p_err = probe
+    print(f"Pre-flight on {os.path.basename(src_idx[keys[0]])}: ", end="")
+    if p_err:
+        print(f"FAILED -> {p_err}\n\nNothing was compared. Fix this before reading any "
+              f"result below.")
+        return 2
+    print(f"{p_total - p_nd:,}/{p_total:,} pixels identical, "
+          f"file {'identical' if p_file else 'DIFFERENT'}\n")
+
     recipe = OFFICIAL
     # Recipes still consistent with every photo checked so far. None = not yet
     # constrained (no photo has needed a search).
@@ -135,20 +168,49 @@ def main():
     for rnd in range(1, args.max_rounds + 1):
         jobs = [(k, src_idx[k], ref_idx[k], recipe[0], recipe[1]) for k in keys]
         failures, errors = [], {}
-        done = 0
+        done = px_seen = px_bad = 0
+        detail = {}
         with ProcessPoolExecutor(max_workers=args.jobs) as pool:
-            for key, ok, err in pool.map(check_one, jobs, chunksize=8):
+            for key, ok, nd, total, maxd, first, file_ok, err in pool.map(
+                    check_one, jobs, chunksize=8):
                 done += 1
+                px_seen += total
+                px_bad += nd
                 results[key] = "identical" if ok else "different"
+                detail[key] = (nd, total, maxd, first, file_ok)
                 if not ok:
                     failures.append(key)
                     if err:
                         errors[key] = err
+                    if nd == 0 and not file_ok:
+                        print(f"  {key}: every pixel matches but the BMP file differs "
+                              f"(header/encoder), not the image data", flush=True)
+                    elif nd and len(failures) <= 5:
+                        x, y = first
+                        print(f"  {key}: {nd:,}/{total:,} pixels differ "
+                              f"(max channel delta {maxd}), first at ({x},{y})", flush=True)
                 if done % 200 == 0 or done == len(jobs):
-                    print(f"  round {rnd}: {done}/{len(jobs)} checked, "
-                          f"{len(failures)} not matching", flush=True)
+                    print(f"  round {rnd}: {done}/{len(jobs)} photos, "
+                          f"{px_seen:,} pixels compared, {px_bad:,} different, "
+                          f"{len(failures)} photo(s) not matching", flush=True)
+        pixels_checked = (px_seen, px_bad)
 
-        history.append((recipe, len(keys) - len(failures), dict(results)))
+        history.append((recipe, len(keys) - len(failures), dict(results), pixels_checked,
+                        dict(detail)))
+
+        if errors:
+            common = {}
+            for msg in errors.values():
+                common[msg] = common.get(msg, 0) + 1
+            top, count = max(common.items(), key=lambda kv: kv[1])
+            print(f"\n  {len(errors)} photo(s) could not even be converted. Most common:")
+            print(f"    {top}   ({count} photo(s))")
+            if count == len(keys):
+                print("\nThis is a systematic failure, not a pixel difference: every photo\n"
+                      "raised the same error, so nothing was actually compared.\n"
+                      "Most likely find_exact_recipe.py next to this script is an older\n"
+                      "copy - use the two files from the same version.")
+                return 2
 
         if not failures:
             print(f"\nRound {rnd}: every one of the {len(keys)} photos is byte-identical.")
@@ -194,15 +256,24 @@ def main():
     # Report the best recipe tried, not merely the last one: a refinement driven
     # by one odd photo can score worse than where we started.
     if history:
-        recipe, ok_n, results = max(history, key=lambda h: h[1])
-        others = [(r, n) for r, n, _ in history if r != recipe and n]
+        recipe, ok_n, results, pixels_checked, detail = max(history, key=lambda h: h[1])
+        others = [(r, n) for r, n, _, _, _ in history if r != recipe and n]
     else:
-        ok_n, others = 0, []
+        ok_n, others, pixels_checked, detail = 0, [], (0, 0), {}
     print("\n" + "=" * 78)
+    px_seen, px_bad = pixels_checked
     print(f"RESULT: {ok_n}/{len(keys)} photos byte-identical "
           f"({100.0 * ok_n / len(keys):.4f}%)")
+    if px_seen:
+        print(f"Pixels: {px_seen - px_bad:,}/{px_seen:,} identical to the official BMP "
+              f"({100.0 * (px_seen - px_bad) / px_seen:.6f}%), {px_bad:,} different")
     print(f"Recipe : {recipe[0]}  +  {recipe[1]}")
-    if alive:
+    if alive and ok_n == 0:
+        print(f"\nINCONSISTENT: the per-photo search says {len(alive)} recipe(s) reproduce "
+              f"these photos exactly,\nyet the check above matched none. The two stages "
+              f"disagree, so this run proves nothing:\nre-run with matching versions of "
+              f"tune_recipe.py and find_exact_recipe.py.")
+    elif alive:
         print(f"({len(alive)} recipe(s) are consistent with every photo; this is the one the "
               f"official tool uses)")
     if others:
@@ -225,9 +296,12 @@ def main():
         import csv
         with open(args.csv, "w", newline="") as fh:
             w = csv.writer(fh)
-            w.writerow(["photo", "outcome"])
+            w.writerow(["photo", "outcome", "pixels_total", "pixels_different",
+                        "max_channel_delta", "first_difference", "file_identical"])
             for k in keys:
-                w.writerow([os.path.basename(src_idx[k]), results.get(k, "?")])
+                nd, total, maxd, first, file_ok = detail.get(k, (0, 0, 0, None, False))
+                w.writerow([os.path.basename(src_idx[k]), results.get(k, "?"), total, nd,
+                            maxd, f"{first[0]},{first[1]}" if first else "", file_ok])
         print(f"per-photo outcome written to {args.csv}")
 
     if ok_n == len(keys):

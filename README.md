@@ -250,6 +250,14 @@ exactly and keeps only those also consistent with the photos already checked;
 if the surviving recipe changed, it starts over. It stops when one recipe
 reproduces every photo, or when it can prove none does.
 
+Every pixel is compared explicitly: the run reports how many pixels were checked
+and how many differ, per photo and in total, and the CSV carries the numbers
+(`pixels_total`, `pixels_different`, `max_channel_delta`, `first_difference`,
+`file_identical`). The file hash is checked too, so a difference confined to the
+BMP header is told apart from a difference in the image data. A pre-flight on
+one photo runs before the batch, and an error is never counted as a pixel
+difference: if the conversions fail systematically the run stops and says so.
+
 Nothing is averaged: a recipe counts only if it is byte-exact. The final report
 gives the best recipe tried (not merely the last), the photos no recipe can
 reproduce — usually a BMP made from a re-cropped version of the photo — and, if
