@@ -210,6 +210,30 @@ proof about your corpus, not a proof for every possible future image: keep the
 harness around and re-run it whenever the converter, a library, or the machine
 changes.
 
+## Finding the Exact Recipe
+
+If your own converter does not match, `tools/find_exact_recipe.py` finds the
+recipe that does, by brute force against files the official tool really
+produced. Give it the images that were converted and the BMPs `convert` made
+from them:
+
+``` bash
+tools/find_exact_recipe.py -i foto -b bmporiginali -n 12
+```
+
+It builds every image with each combination of a **geometry step** (scale and
+pad as the official tool does, cut, stretch, `ImageOps.fit`, each resampling
+filter, EXIF-rotated, ICC-converted) and a **quantisation step**
+(`quantize` with Floyd-Steinberg or no dithering, 256-entry or 7-entry palette,
+the low-level `convert("P", …)` call, an adaptive palette), then compares each
+result with the official BMP pixel by pixel and byte by byte.
+
+The output ranks every recipe by the percentage of pixels that differ, confirms
+a perfect one on more files, and prints the exact Python code that reproduces
+it. When the sources are already 800×480 the framing step does nothing, so many
+recipes tie and the report says so: what is being proved there is the
+quantisation step.
+
 ## Samples and Outputs Included
 
 - Example **input** photos (both portrait and landscape) live under
