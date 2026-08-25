@@ -333,6 +333,88 @@ def check_determinism(src, ref_bin, ref_args):
     return shas[0] == shas[1], shas[0]
 
 
+# ------------------------------------------- mode C: what kind of difference?
+def palette_histogram(path):
+    """How many pixels of each device colour the BMP uses."""
+    w, h, rows = read_bmp(path)
+    counts = dict.fromkeys(PALETTE, 0)
+    other = 0
+    for row in rows:
+        for x in range(w):
+            px = (row[x * 3], row[x * 3 + 1], row[x * 3 + 2])
+            if px in counts:
+                counts[px] += 1
+            else:
+                other += 1
+    return counts, other, w * h
+
+
+def diff_stats(args):
+    """Read the pairs saved by --keep and say WHY they differ.
+
+    Dithering spreads a continuous image over the 7 device colours, so the
+    proportion of each colour is a fingerprint of the image *before* dithering.
+    Same proportions + different placement = the dithering differs.
+    Different proportions = the pixels fed to the dithering already differed
+    (decoding, resize, colour management), and the dithering only spreads it.
+    """
+    root = args.stats_dir
+    pairs = []
+    for name in sorted(os.listdir(root)):
+        ref = os.path.join(root, name, "reference.bmp")
+        cand = os.path.join(root, name, "candidate.bmp")
+        if os.path.isfile(ref) and os.path.isfile(cand):
+            pairs.append((name, ref, cand))
+    if not pairs:
+        sys.exit(f"no reference.bmp/candidate.bmp pair found in {root}")
+    if args.limit:
+        pairs = pairs[:args.limit]
+
+    print(f"Analysing {len(pairs)} pair(s) from {root}\n")
+    totals = {c: [0, 0] for c in PALETTE}
+    grand = 0
+    worst = []
+    for name, ref, cand in pairs:
+        rc, r_other, n = palette_histogram(ref)
+        cc, c_other, _ = palette_histogram(cand)
+        grand += n
+        shift = 0.0
+        for c in PALETTE:
+            totals[c][0] += rc[c]
+            totals[c][1] += cc[c]
+            shift += abs(rc[c] - cc[c])
+        worst.append((shift / (2 * n), name))
+    worst.sort(reverse=True)
+
+    names = {(0, 0, 0): "black", (255, 255, 255): "white", (0, 255, 0): "green",
+             (0, 0, 255): "blue", (255, 0, 0): "red", (255, 255, 0): "yellow",
+             (255, 128, 0): "orange"}
+    print(f"{'colour':10s} {'reference':>12s} {'candidate':>12s} {'delta':>9s}")
+    total_shift = 0
+    for c in sorted(PALETTE, key=lambda c: -totals[c][0]):
+        r, k = totals[c]
+        dr, dk = 100.0 * r / grand, 100.0 * k / grand
+        total_shift += abs(r - k)
+        print(f"{names[c]:10s} {dr:11.3f}% {dk:11.3f}% {dk - dr:+8.3f}%")
+    shift_pct = 100.0 * total_shift / (2 * grand)
+
+    print(f"\nColour-mix shift: {shift_pct:.3f}%")
+    if shift_pct < 0.5:
+        print("=> The two converters render the SAME underlying image: identical colour\n"
+              "   mix, different placement of the dots. The decoding, the resize and the\n"
+              "   palette all agree; only the Floyd-Steinberg implementation differs\n"
+              "   (error rounding, propagation order, or the nearest-colour search).")
+    elif shift_pct < 3:
+        print("=> Mostly the dithering, but the colour mix moved a little: something\n"
+              "   upstream (decoding or resize) also differs slightly.")
+    else:
+        print("=> The colour mix itself moved: the pixels fed to the dithering already\n"
+              "   differed (decoding, resize filter, or colour management), not just the\n"
+              "   dithering. Check the geometry stage first.")
+    print(f"\nMost shifted images: {', '.join(n for _, n in worst[:3])}")
+    return 0
+
+
 # ------------------------------------------------------- mode A: two folders
 def compare_dirs(args):
     for d in (args.ref_dir, args.cand_dir):
@@ -455,6 +537,9 @@ def main():
     ap.add_argument("--strip", action="append", default=[], metavar="SUFFIX",
                     help="extra name suffix to ignore when pairing files (repeatable), "
                          "e.g. --strip _mio")
+    ap.add_argument("--stats-dir", metavar="DIR",
+                    help="analyse the pairs saved by --keep and tell whether the difference "
+                         "comes from the dithering itself or from the pixels fed to it")
     ap.add_argument("-i", "--images", help="folder with the source images (run-both mode)")
     ap.add_argument("-c", "--convert", default="./convert", help="official convert binary")
     ap.add_argument("--ref-args", default="", help="extra args for the reference, e.g. '--mode cut'")
@@ -472,6 +557,8 @@ def main():
                          "culprit, not the conversion algorithm. Needs Pillow.")
     args = ap.parse_args()
 
+    if args.stats_dir:
+        return diff_stats(args)
     if args.ref_dir or args.cand_dir:
         if not (args.ref_dir and args.cand_dir):
             sys.exit("--ref-dir and --cand-dir must be used together")

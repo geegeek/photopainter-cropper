@@ -191,6 +191,14 @@ When two outputs differ, the report says what kind of difference it is:
 | `sparse` | <0.5% of pixels: an upstream rounding difference (decoding/resize) |
 | `dither` | many pixels, all device colours: the dithering / nearest-colour search differs |
 
+When everything differs, `--stats-dir diffs` reads the pairs saved by `--keep`
+and compares the **colour mix** of the two BMPs. Dithering spreads a continuous
+image over the 7 device colours, so the proportion of each colour is a
+fingerprint of the image *before* dithering: same proportions with the dots in
+different places means only the Floyd-Steinberg implementation differs, while a
+shifted mix means the pixels fed to the dithering already differed (decoding,
+resize filter, colour management).
+
 To tell an upstream decoding difference from a real algorithm difference, re-run
 with `--lossless-probe`: every source image is first re-encoded to PNG (which any
 decoder decodes identically), so if the outputs match on PNG but not on the
