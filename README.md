@@ -234,6 +234,32 @@ it. When the sources are already 800×480 the framing step does nothing, so many
 recipes tie and the report says so: what is being proved there is the
 quantisation step.
 
+## Reverse-engineering the Conversion
+
+`tools/reverse_convert.py` answers the question from scratch: given the photos
+and the BMPs the official tool produced from them, **how** were they converted?
+
+``` bash
+tools/reverse_convert.py -i foto -b bmporiginali -j 8 --csv esito.csv
+```
+
+It is self-contained (Pillow only) and searches a space of ~960 recipes, the
+cartesian product of independent axes: preprocessing (as opened, RGB, EXIF
+rotated, ICC to sRGB) x framing (scale and pad, stretch, `ImageOps.fit`, cut) x
+resampling filter (Pillow's default plus six explicit ones) x padding colour x
+dithering (Floyd-Steinberg, none) x palette (256 entries or 7) x API
+(`quantize()` or the low-level `convert("P", …)`).
+
+For the first photos it builds every distinct frame once (many recipes collapse
+to the same pixels), quantises each, and compares **all three channels of all
+384000 pixels** with the official BMP. The recipes that match exactly become
+hypotheses, the next photo narrows them down, and the survivor is then verified
+on the whole corpus. Any photo that disagrees reopens the search; a photo no
+recipe can reproduce is named, with how many pixels differ, the largest channel
+delta and the coordinates of the first difference.
+
+When every photo matches it prints the Python code of the winning recipe.
+
 ## Converging on Every Photo
 
 `tools/tune_recipe.py` runs the search over the **whole** corpus instead of a
