@@ -1,10 +1,12 @@
 # Storybook Prompt Builder — Specifiche di progetto
 
-Strumento web locale per costruire, tavola per tavola, i prompt (testo + immagini di riferimento)
-con cui generare le illustrazioni di un libro per bambini mantenendo **coerenza dei personaggi**
-e **personalizzazione degli ambienti** (foto reali della propria casa, giardino, paese).
+Applicazione **desktop per macOS** (Python, avviata da terminale) per costruire, tavola per
+tavola, i prompt (testo + immagini di riferimento) con cui generare le illustrazioni di un libro
+per bambini mantenendo **coerenza dei personaggi** e **personalizzazione degli ambienti**
+(foto reali della propria casa, giardino, paese), con **generazione parallela** e
+**ramificazioni di modifica per singola tavola**.
 
-Versione documento: 1.0 — 2026-11-09
+Versione documento: 1.1 — 2026-11-09 (sostituisce la 1.0 "pagina web")
 Stato: specifica da implementare
 
 ---
@@ -15,21 +17,26 @@ Oggi il flusso è manuale: si scrive lo storyboard con ChatGPT, si copia a mano 
 parte fissa (identità grafica + modello dei protagonisti), si allega ogni volta la scheda
 personaggi, e si spera che il risultato resti coerente su 30 tavole.
 
-Il tool deve rendere questo flusso **componibile e ripetibile**. Il principio è uno solo:
+Il tool deve rendere questo flusso **componibile e ripetibile**:
 
 > **Il prompt di una tavola non si scrive: si compila.**
 > Il prompt finale è il risultato deterministico di blocchi riutilizzabili (identità grafica,
-> personaggi, asset, regole di continuità) più la descrizione specifica della scena.
-> L'utente decide *quali* blocchi entrano in una tavola; il motore decide *come* assemblarli.
+> personaggi, asset, snippet, regole di continuità) più la descrizione specifica della scena.
+> L'utente decide *quali* blocchi entrano in una tavola e può **sovrascrivere qualsiasi
+> dettaglio** in una ramificazione locale; il motore decide *come* assemblarli.
 
-Conseguenza pratica rispetto all'idea iniziale "trascino tutto in ogni tavola": i blocchi
-**globali** (identità grafica, formato, divieti) entrano automaticamente in tutte le tavole e non
-vanno trascinati. Il drag & drop serve per le cose che cambiano da tavola a tavola:
+Tre regole operative:
 
-- quali **personaggi** compaiono;
-- quali **asset fotografici** (la mia casa, il mio giardino) fanno da riferimento;
-- quali **render già approvati** di altre tavole vanno riusati come riferimento di continuità;
-- l'**ordine** delle tavole e il loro **stato** di lavorazione (colonne tipo Trello).
+1. I blocchi **globali** (identità grafica, formato, divieti) entrano in tutte le tavole senza
+   trascinarli. Il drag & drop serve per ciò che cambia: personaggi presenti, asset fotografici,
+   note/snippet, render di continuità, ordine e stato delle tavole.
+2. **Ogni informazione inserita una volta è riutilizzabile**: personaggi, asset, oggetti,
+   ambienti, snippet di testo (luce, inquadratura, regole), render approvati. Tutto vive nella
+   Libreria ed è trascinabile su qualunque card.
+3. **Ogni tavola può ramificare**: si apre in una finestra propria, si crea una variante che
+   eredita tutto dalla base e sovrascrive solo ciò che si tocca (anche la descrizione di un
+   personaggio o una riga dello stile), si generano più render in parallelo, si sceglie il
+   migliore. Le altre tavole non vengono toccate.
 
 ---
 
@@ -37,42 +44,43 @@ vanno trascinati. Il drag & drop serve per le cose che cambiano da tavola a tavo
 
 | Termine | Significato |
 |---|---|
-| **Progetto (Libro)** | Un libro illustrato. Contiene tutto quanto segue. Una cartella su disco. |
-| **Identità grafica** | Blocco testuale fisso: stile pittorico, forme, palette, formato pagina, divieti (no 3D, no testo in immagine…). Entra in ogni prompt. |
-| **Character sheet** | L'immagine "I nostri protagonisti" generata dalle foto reali e approvata. È l'immagine di riferimento n. 1 di ogni prompt in cui compare almeno un protagonista. |
-| **Personaggio** | Un protagonista umano o un personaggio secondario (Tobia, Nino…). Ha nome, descrizione canonica, elementi identificativi, abiti per scena, eventuale ritaglio immagine. |
-| **Asset di riferimento** | Un'immagine esterna (foto della casa, del giardino, del passeggino, del paese) con un **alias** (es. `casa`) e una descrizione. Quando una tavola lo collega, il prompt dice "quando si parla di *casa* si intende l'immagine di riferimento N". |
-| **Oggetto fisso** | Oggetto ricorrente descritto solo a testo (Stella delle Radici, Fiore della Stella). Può avere un'immagine di riferimento una volta che un render lo mostra bene. |
-| **Ambiente ricorrente** | Luogo che deve restare uguale in più tavole (giardino, tunnel, piazza, cameretta). Può puntare a un asset fotografico e/o a un render approvato. |
-| **Tavola** | Una pagina del libro: numero, titolo, parte, descrizione IMMAGINE, TESTO, collegamenti a personaggi/asset/ambienti, note di continuità, stato. |
-| **Prompt compilato** | Il testo finale + la lista ordinata di immagini allegate, prodotto dal motore di composizione per una tavola. È ciò che viene inviato all'API. |
-| **Render** | Un'immagine generata per una tavola. Una tavola ha N render (versioni); al massimo uno è **approvato**. |
+| **Progetto (Libro)** | Un libro illustrato. Una cartella su disco con `project.json` e le immagini. |
+| **Identità grafica** | Blocco testuale fisso: tecnica pittorica, forme, palette, formato, divieti. Entra in ogni prompt. |
+| **Character sheet** | L'immagine "I nostri protagonisti" generata dalle foto reali e approvata. Immagine di riferimento n. 1 di ogni prompt in cui compare un protagonista. |
+| **Personaggio** | Protagonista umano o personaggio secondario. Nome, descrizione canonica, elementi identificativi, abiti per scena, eventuale immagine di riferimento. |
+| **Asset** | Immagine esterna (foto della casa, del giardino, del passeggino) con un **alias** (es. `casa`) e una nota di adattamento. Collegato a una tavola, il prompt dice "quando la scena dice *casa* intende l'immagine di riferimento N". |
+| **Oggetto fisso** | Oggetto ricorrente descritto a testo (Stella delle Radici, Fiore). Può puntare a un render che lo mostra bene. |
+| **Ambiente ricorrente** | Luogo che deve restare uguale in più tavole. Può puntare a un asset e/o al render approvato di una tavola. |
+| **Snippet** | Frammento di testo riutilizzabile ("luce calda al tramonto", "stesso giardino della tavola 1", "inquadratura dal basso"). Trascinabile su una card; entra nella sezione CONTINUITÀ/SCENA del prompt. |
+| **Nota** | Post-it sul board: testo libero, colore, posizione. Può essere libera (promemoria) o agganciata a una card; se marcata "nel prompt" si comporta come uno snippet. |
+| **Tavola** | Una pagina del libro: numero, titolo, parte, IMMAGINE, TESTO, collegamenti, stato, albero di varianti. |
+| **Variante** | Nodo dell'albero di modifiche di una tavola. Eredita dal genitore e sovrascrive solo i campi toccati. La radice è la **base** (ciò che si vede sulla card). |
+| **Prompt compilato** | Testo finale + lista ordinata di immagini allegate, prodotto dal motore per una variante. È ciò che viene inviato all'API. |
+| **Render** | Un'immagine generata per una variante. Più render per variante (es. 4 in parallelo). Al massimo uno per tavola è **approvato**. |
 | **Pagina finale** | Il render approvato impaginato in 4:5 con il TESTO nella fascia inferiore. |
+| **Job** | Una chiamata API in coda o in esecuzione. Visibile nel pannello Coda, annullabile. |
 
 ---
 
 ## 2. Flusso di lavoro end-to-end
 
 ```
-FASE 0  Setup progetto          → nome libro, identità grafica (da template modificabile)
-FASE 1  Protagonisti            → carico foto reali → genero character sheet → approvo
-                                 → estraggo descrizioni canoniche (LLM vision) → correggo → blocco
-FASE 2  Asset & secondari       → carico foto (casa, giardino…), assegno alias + descrizione
-                                 → definisco personaggi secondari e oggetti fissi (testo)
-FASE 3  Storyboard              → A) genero da brief con LLM (output JSON)   oppure
-                                   B) incollo storyboard esistente → LLM lo converte in JSON
-                                 → nascono le card delle tavole, già con personaggi suggeriti
-FASE 4  Board (Trello)          → per ogni tavola: verifico personaggi, collego asset,
-                                   aggiungo note, vedo l'anteprima del prompt compilato
-FASE 5  Generazione             → una chiamata API per tavola → render → confronto versioni
-                                 → approvo / rigenero / modifica guidata
-FASE 6  Finalizzazione          → testo nella fascia (locale, Pillow) oppure via AI
-                                 → export PDF/ZIP di tutte le pagine
+FASE 0  Setup progetto      → nome libro, identità grafica (da template modificabile)
+FASE 1  Protagonisti        → foto reali → character sheet (N varianti in parallelo) → approvo
+                             → estraggo descrizioni canoniche (LLM vision) → correggo → blocco
+FASE 2  Libreria            → asset con alias, secondari, oggetti fissi, ambienti, snippet
+FASE 3  Storyboard          → A) genero da brief (output JSON)  oppure
+                               B) incollo storyboard esistente → LLM lo converte in JSON
+                             → nascono le card, già collegate a personaggi/asset per nome e alias
+FASE 4  Board               → trascino card, note, snippet, personaggi, asset; ispeziono il
+                               prompt compilato; segno "pronta"
+FASE 5  Generazione         → in parallelo: più tavole insieme e/o più render della stessa
+                               tavola; coda con progresso e costo stimato
+FASE 6  Ramificazione       → apro la tavola in una finestra, creo varianti, sovrascrivo
+                               dettagli, genero, confronto, approvo il render migliore
+FASE 7  Finalizzazione      → testo nella fascia (locale, Pillow) oppure via AI
+                             → export PDF/ZIP di tutte le pagine + log dei prompt
 ```
-
-Ogni fase è indipendente: si può saltare la generazione dello storyboard e importarne uno,
-si può rigenerare il character sheet in corso d'opera (con avviso che le tavole già generate
-potrebbero perdere coerenza).
 
 ---
 
@@ -82,304 +90,314 @@ potrebbero perdere coerenza).
 
 | Componente | Scelta | Motivazione |
 |---|---|---|
-| Backend | **Python 3.11+ / FastAPI** | Coerente con il repo esistente (Python, SDK `openai`, `.env`). Serve API REST + file statici. |
-| Frontend | **Vue 3 via CDN (ESM, senza build) + SortableJS** | Trello-like con drag & drop senza toolchain Node. Alternativa se si preferisce: React + Vite. |
-| Storage | **Filesystem: una cartella per progetto con `project.json` + immagini** | Trasparente, versionabile, backup = copia cartella. Nessun DB da gestire. |
-| Immagini AI | **OpenAI Images API** (`images.edit` con immagini di riferimento multiple) | Richiesta esplicita: generazione con ChatGPT/OpenAI, chiamate singole per tavola. |
-| Testo AI | Provider astratto: **OpenAI** o **Anthropic** | Storyboard e descrizioni possono essere fatte con Claude; immagini sempre OpenAI. |
-| Impaginazione | **Pillow** | Già in `requirements.txt`. Crop 4:5, fascia testo, export. |
-| PDF | `img2pdf` o Pillow (`save(..., save_all=True)`) | Export del libro. |
+| Linguaggio | **Python 3.11+** | Coerente con il repo (cropper Tkinter, SDK `openai`, `.env`). |
+| GUI | **PySide6 (Qt 6)** | Drag & drop nativo, `QGraphicsView` per un board con card e note trascinabili, finestre multiple, dock, thread pool integrato, aspetto nativo macOS. Tkinter (usato nel cropper) non regge un board Trello-like né più finestre con job in background. |
+| Core | Pacchetto `core/` **senza dipendenze da Qt** | Modello dati, composizione prompt, provider, impaginazione. Usato sia dalla GUI sia dalla CLI. |
+| CLI | `python -m storybook …` | Per chi preferisce il terminale: compilare prompt, generare a lotti in parallelo, esportare. Stessa logica della GUI. |
+| Storage | **Filesystem: una cartella per progetto, `project.json` + immagini** | Trasparente, backup = copia cartella. Nessun DB. |
+| Immagini AI | **OpenAI Images API** (`images.edit` con riferimenti multipli) | Richiesta esplicita. Una chiamata per render. |
+| Testo AI | Provider astratto: **OpenAI** o **Anthropic** | Storyboard e descrizioni anche con Claude; immagini sempre OpenAI. |
+| Concorrenza | `concurrent.futures.ThreadPoolExecutor` nel core; in GUI incapsulato in `QThreadPool`/`QRunnable` con segnali | Le chiamate SDK sono sincrone e I/O-bound: i thread bastano. Concorrenza configurabile (default 3). |
+| Impaginazione | **Pillow** | Già nel repo. Pagina 4:5, fascia testo, export. |
 
-### 3.2 Topologia
-
-```
-Browser (127.0.0.1:8765)  ──HTTP──▶  FastAPI (uvicorn, bind solo su loopback)
-                                        ├── /api/...            REST JSON
-                                        ├── /files/...          immagini dei progetti (static)
-                                        └── /                   SPA (index.html, app.js, css)
-                                              │
-                                              ├── openai SDK  ──▶ api.openai.com   (immagini + testo)
-                                              └── anthropic SDK ─▶ api.anthropic.com (solo testo, opz.)
-```
-
-- La chiave API vive **solo nel backend** (`.env`, come nel repo attuale). Il browser non la vede mai.
-- Bind su `127.0.0.1`. Nessuna autenticazione (uso personale locale); documentare che esporre la
-  porta su LAN richiede almeno un token statico.
-- Chiamate lunghe (generazione immagine 20–90 s) gestite come **job asincroni**: `POST` ritorna
-  `job_id`, il frontend fa polling su `/api/jobs/{id}` (o SSE). Evita timeout e permette di
-  mostrare lo stato "In generazione…" sulla card.
-
-### 3.3 Struttura su disco
+### 3.2 Struttura del codice
 
 ```
-storybook-prompt-builder/
-├── backend/
-│   ├── main.py               # FastAPI app, mount static, router
-│   ├── models.py             # Pydantic: Project, Character, Asset, Plate, Render…
-│   ├── storage.py            # load/save project.json, gestione file
-│   ├── composer.py           # MOTORE DI COMPOSIZIONE DEL PROMPT
+storybook/
+├── __main__.py              # entry: `python -m storybook gui` | compose | generate | import | export
+├── cli.py                   # argparse, usa core/
+├── core/
+│   ├── models.py            # Pydantic: Project, Character, Asset, Snippet, Note, Plate, Variant, Render…
+│   ├── storage.py           # load/save atomico di project.json, gestione file, backup
+│   ├── composer.py          # MOTORE DI COMPOSIZIONE (variante → prompt + immagini + warning)
+│   ├── resolver.py          # risoluzione eredità delle varianti (base → … → foglia)
 │   ├── providers/
-│   │   ├── base.py           # interfacce TextProvider, ImageProvider
-│   │   ├── openai_images.py  # images.edit / images.generate
-│   │   ├── openai_text.py    # responses/chat + structured output
-│   │   └── anthropic_text.py # messages + JSON output
-│   ├── jobs.py               # coda job in-process (asyncio) + stato
-│   ├── layout.py             # Pillow: pagina 4:5, fascia testo, export
-│   └── templates/            # prompt template (.md/.txt) editabili dall'utente
-│       ├── identita_grafica_default.md
-│       ├── character_sheet.md
-│       ├── estrai_descrizioni.md
-│       ├── genera_storyboard.md
-│       ├── importa_storyboard.md
-│       └── tavola.md
-├── frontend/
-│   ├── index.html
-│   ├── app.js                # Vue 3 (ESM da CDN)
-│   ├── components/…
-│   └── style.css
-├── projects/                 # DATI (in .gitignore)
-│   └── <slug-progetto>/
+│   │   ├── base.py          # ImageProvider, TextProvider
+│   │   ├── openai_images.py
+│   │   ├── openai_text.py
+│   │   └── anthropic_text.py
+│   ├── jobs.py              # JobManager: coda, pool thread, stati, annullamento, retry, costi
+│   ├── layout.py            # Pillow: pagina 4:5, fascia testo, export ZIP/PDF
+│   └── templates/           # prompt template .md modificabili dall'utente
+├── gui/
+│   ├── app.py               # QApplication, tema, apertura progetto
+│   ├── main_window.py       # finestra principale: Libreria | Board | Ispettore | Coda
+│   ├── board/               # QGraphicsScene/View, CardItem, NoteItem, ColumnItem, drag/drop
+│   ├── library/             # QTreeView con MIME type custom per il drag
+│   ├── inspector/           # pannello proprietà card + anteprima prompt
+│   ├── plate_window.py      # FINESTRA TAVOLA: albero varianti, editor override, render, confronto
+│   ├── setup/               # dialoghi: identità grafica, protagonisti, asset, storyboard
+│   ├── queue_panel.py       # tabella job con progresso, annulla, riprova
+│   └── workers.py           # QRunnable che avvolgono core.jobs e emettono segnali
+├── projects/                # DATI (in .gitignore)
+│   └── <slug>/
 │       ├── project.json
-│       ├── sources/          # foto reali caricate (volti, casa, giardino…)
-│       ├── character_sheet/  # versioni generate del character sheet
-│       ├── renders/<NN>/     # render per tavola: v1.png, v2.png, …
-│       ├── pages/            # pagine finali impaginate 4:5
-│       └── prompts/<NN>/     # prompt compilati inviati (log, riproducibilità)
+│       ├── sources/         # foto reali
+│       ├── character_sheet/ # versioni generate
+│       ├── renders/<NN>/<variant_id>/vK.png
+│       ├── prompts/<NN>/<variant_id>/vK.txt   # prompt inviato + lista file + parametri
+│       ├── pages/           # pagine finali 4:5
+│       └── project.json.bak
 ├── .env.example
-├── requirements.txt
+├── requirements.txt         # PySide6, openai, anthropic (opz.), Pillow, pydantic, img2pdf
 └── README.md
+```
+
+Avvio da terminale:
+```bash
+python -m venv .venv && source .venv/bin/activate
+pip install -r requirements.txt
+python -m storybook gui                 # apre la finestra
+python -m storybook generate --project vittorio --plates 1-5 --parallel 3   # headless
 ```
 
 ---
 
 ## 4. Modello dati (`project.json`)
 
-Notazione: campi Pydantic; `id` sono stringhe corte univoche (es. `nanoid`).
-
 ### 4.1 Project
 ```
 id, name, slug, created_at, updated_at
-style:            StyleIdentity
-format:           PageFormat
-characters:       [Character]          # protagonisti e secondari
-assets:           [Asset]              # immagini di riferimento con alias
-fixed_objects:    [FixedObject]        # oggetti descritti a testo
-environments:     [Environment]        # ambienti ricorrenti
-character_sheet:  CharacterSheet | null
-continuity_rules: [str]                # "Controlli di continuità" globali, numerati
-plates:           [Plate]              # le tavole
-parts:            [Part]               # PARTE I, II… (id, titolo, ordine)
-settings:         ProjectSettings      # modelli, qualità, size, provider testo…
+style:             StyleIdentity
+format:            PageFormat
+characters:        [Character]
+assets:            [Asset]
+fixed_objects:     [FixedObject]
+environments:      [Environment]
+snippets:          [Snippet]
+notes:             [Note]            # post-it del board
+character_sheet:   CharacterSheet | null
+continuity_rules:  [str]
+parts:             [Part]
+plates:            [Plate]
+board_layout:      { mode: "columns" | "sequence" | "free", card_positions: {plate_id: {x,y}} }
+settings:          ProjectSettings
 ```
 
-### 4.2 StyleIdentity (blocco fisso, entra in ogni prompt)
+### 4.2 StyleIdentity / PageFormat
 ```
-technique:        str   # "gouache e acquerello, texture carta…"
-character_style:  str   # "fumettosi, forme morbide, contorni delicati…"
-mood:             str   # "caldo, accogliente, magico"
-negatives:        [str] # "no fotorealismo", "no 3D", "no testo in immagine", …
-extra:            str   # note libere
+StyleIdentity: technique, character_style, mood, negatives: [str], extra
+PageFormat:    aspect "4:5", illustration_pct 80, text_band, render_strategy "square_plus_band" | "full_page"
 ```
 
-### 4.3 PageFormat
+### 4.3 Character
 ```
-aspect:           "4:5"
-illustration_pct: 80            # % di altezza occupata dall'illustrazione
-text_band:        "chiara, uniforme"
-render_strategy:  "square_plus_band" | "full_page"   # vedi §9
-```
-
-### 4.4 Character
-```
-id, name, role: "protagonist" | "secondary"
-age_label:        str | null          # "3 anni"
-canonical:        str                 # descrizione completa (paragrafo)
-key_features:     [str]               # 3–5 elementi identificativi ("ciuffo castano mosso", …)
-outfits:          { default: str, <tag>: str }   # es. { default: "felpa turchese…", notte: "pigiama azzurro" }
-props:            [str]               # "piccola torcia a mano"
-never:            [str]               # "non deve sembrare di 3 anni"
-source_photos:    [file]              # foto reali (solo protagonisti)
-sheet_crop:       {x,y,w,h} | null    # ritaglio sul character sheet per anteprima card
-reference_image:  file | null         # per secondari: render approvato che li mostra bene
+id, name, role: "protagonist" | "secondary", age_label
+canonical: str, key_features: [str], outfits: {default: str, <tag>: str}, props: [str], never: [str]
+source_photos: [file], sheet_crop: {x,y,w,h} | null, reference_image: file | null
 ```
 
-### 4.5 Asset (immagine di riferimento esterna)
+### 4.4 Asset / FixedObject / Environment / Snippet / Note
 ```
-id, alias: str                 # "casa", "giardino", "passeggino"  (univoco, usato nel prompt)
-title, description: str        # cosa è e cosa deve essere preservato
-file: path
-adaptation_note: str           # "tradurre nello stile del libro, mantenere forma tetto e colore"
-```
-
-### 4.6 FixedObject / Environment
-```
+Asset:       id, alias (univoco), title, description, file, adaptation_note
 FixedObject: id, name, description, never: [str], reference_image: file | null
-Environment: id, name, description, asset_id: id | null, reference_plate_id: id | null
-             # reference_plate_id → il render approvato di quella tavola fa da riferimento
+Environment: id, name, description, asset_id | null, reference_plate_id | null
+Snippet:     id, label, text, section: "scene" | "continuity" | "negatives" | "style", tags: [str]
+Note:        id, text, color, pos: {x,y}, attached_plate_id | null, in_prompt: bool, section
 ```
 
-### 4.7 Plate (tavola)
+### 4.5 Plate (tavola)
 ```
-id, number: int, title: str, part_id: id | null
+id, number, title, part_id
 status:            "draft" | "ready" | "generated" | "approved" | "final"
-scene:             str            # blocco IMMAGINE dello storyboard
-text:              str            # blocco TESTO (dialoghi), va in impaginazione
-character_ids:     [id]           # chi compare
-outfit_tags:       { character_id: tag }   # es. { luigi: "notte" }
-asset_ids:         [id]
-fixed_object_ids:  [id]
-environment_ids:   [id]
-continuity_plate_ids: [id]        # tavole il cui render approvato va allegato come riferimento
-continuity_notes:  str            # "stesso giardino della tavola 1; luce al tramonto"
-plate_negatives:   [str]          # divieti specifici ("nessun passeggino in cameretta")
-prompt_override:   str | null     # se valorizzato sostituisce il prompt compilato (escape hatch)
-renders:           [Render]
-approved_render_id: id | null
+text:              str                 # TESTO (dialoghi), solo impaginazione
+base:              VariantFields       # i campi "di base" della card (vedi 4.6)
+variants:          [Variant]           # albero; la radice ha parent_id = null ed è la base
+active_variant_id: id                  # variante mostrata/usata di default
+approved_render_id: id | null          # può stare in qualunque variante
 final_page:        file | null
 ```
 
+### 4.6 VariantFields (tutti opzionali in una variante: `null` = eredita)
+```
+scene:                 str
+character_ids:         [id]
+outfit_tags:           {character_id: tag}
+asset_ids:             [id]
+fixed_object_ids:      [id]
+environment_ids:       [id]
+snippet_ids:           [id]
+continuity_plate_ids:  [id]
+continuity_notes:      str
+plate_negatives:       [str]
+character_overrides:   {character_id: str}   # testo che SOSTITUISCE la descrizione canonica solo qui
+style_override:        str | null            # sostituisce/integra l'identità grafica solo qui
+extra_images:          [file]                # riferimenti aggiuntivi solo per questa variante
+prompt_override:       str | null            # prompt manuale completo (escape hatch)
+model, size, quality, input_fidelity         # parametri API per questa variante
+```
+
+### 4.7 Variant
+```
+id, parent_id | null, label, created_at, note
+fields:   VariantFields          # solo i campi sovrascritti
+renders:  [Render]
+status:   "open" | "chosen" | "discarded"
+```
+Risoluzione (`resolver.py`): si percorre la catena foglia → … → radice; per ogni campo vince
+il primo valore non nullo. Per le liste è possibile indicare operazioni relative
+(`{"add": [...], "remove": [...]}`) oltre alla sostituzione completa.
+
 ### 4.8 Render
 ```
-id, version: int, file: path, created_at
-prompt_text: str                  # prompt esattamente inviato
-reference_files: [path]           # immagini allegate, in ordine
-model, size, quality, input_fidelity
+id, version, file, created_at, variant_id
+prompt_text, reference_files: [path], model, size, quality, input_fidelity
 mode: "generate" | "edit_from_render" | "add_text"
-parent_render_id: id | null       # per modifiche guidate
-cost_estimate: float | null
-notes: str
+parent_render_id | null, job_id, duration_s, cost_estimate, notes, rating: 0–5
 ```
 
 ### 4.9 ProjectSettings
 ```
-image_model:      "gpt-image-1.5"     # default; alternative: gpt-image-1, gpt-image-2
-image_quality:    "high"
-image_size:       "1024x1024"         # con render_strategy square_plus_band
-input_fidelity:   "high"              # ignorato dai modelli che non lo supportano
-text_provider:    "openai" | "anthropic"
-text_model:       str
-max_reference_images: 16
-font_path, font_size_min, font_size_max   # impaginazione testo
+image_model "gpt-image-1.5" | "gpt-image-1" | "gpt-image-2"
+image_quality "high", image_size "1024x1024", input_fidelity "high"
+text_provider "openai" | "anthropic", text_model
+max_reference_images 16
+max_parallel_jobs 3
+default_renders_per_run 1          # quanti render per variante a ogni "Genera"
+price_table {model: {quality: €}}  # per la stima costi, modificabile
+font_path, font_size_min, font_size_max
 ```
 
 ---
 
-## 5. Interfaccia utente
+## 5. Interfaccia (PySide6)
 
-### 5.1 Schermate
+### 5.1 Finestra principale
 
-1. **Progetti** — elenco cartelle in `projects/`, crea/duplica/apri.
-2. **Setup libro** (tab):
-   - *Identità grafica*: form sui campi di `StyleIdentity` + `PageFormat`, precompilato dal
-     template; anteprima del blocco testuale risultante.
-   - *Protagonisti*: card per personaggio con foto reali caricabili, campi canonici,
-     key_features, outfits. Bottone **"Genera character sheet"** → mostra versioni, approvo una.
-     Bottone **"Estrai descrizioni dalla scheda"** → LLM vision compila `canonical` e
-     `key_features` (modificabili). Lucchetto **"Blocca protagonisti"**.
-   - *Secondari, oggetti, ambienti*: liste editabili.
-   - *Asset*: upload immagini, alias, descrizione, nota di adattamento.
-3. **Storyboard** — due modalità:
-   - *Genera*: textarea con brief (trama, morale, n. tavole, luoghi, personaggi coinvolti) →
-     LLM → JSON → anteprima tabellare → "Crea tavole".
-   - *Importa*: incolla testo esistente → LLM lo struttura → stessa anteprima.
-   - L'anteprima mostra per ogni tavola i personaggi/asset **suggeriti automaticamente**
-     (match per nome e per alias nel testo) con possibilità di correggere prima di creare.
-4. **Board** (schermata principale, stile Trello) — vedi §5.2.
-5. **Scheda tavola** (drawer/modal a destra) — vedi §5.3.
-6. **Export** — anteprima pagine finali, download ZIP / PDF, download dei prompt in `.md`.
-7. **Impostazioni** — modelli, qualità, provider testo, stima costi, font.
+```
+┌──────────────┬─────────────────────────────────────────────┬──────────────────┐
+│ LIBRERIA     │ BOARD (QGraphicsView, zoom/pan)             │ ISPETTORE        │
+│ ▸ Personaggi │  ┌Bozza──┐ ┌Pronta──┐ ┌Generata┐ ┌Approv.┐  │ card selezionata │
+│ ▸ Asset      │  │[01]   │ │[03]    │ │[02] v4 │ │       │  │ – personaggi     │
+│ ▸ Oggetti    │  │[05]   │ │ 📝nota │ │        │ │       │  │ – asset          │
+│ ▸ Ambienti   │  │       │ │        │ │        │ │       │  │ – snippet        │
+│ ▸ Snippet    │  └───────┘ └────────┘ └────────┘ └───────┘  │ – continuità     │
+│ ▸ Note       │     📝 nota libera                           │ – anteprima      │
+│ ▸ Render ok  │                                              │   PROMPT (live)  │
+├──────────────┴─────────────────────────────────────────────┴──────────────────┤
+│ CODA  [job] tavola 02 var. "cielo scuro" ×3  ▓▓▓▓░░ 2/3  0,24 €  [annulla]     │
+└───────────────────────────────────────────────────────────────────────────────┘
+```
 
-### 5.2 Board
+- **Libreria** (dock sinistro): albero con elementi trascinabili (MIME `application/x-storybook-ref`).
+  Doppio clic → modifica. Pulsanti "+" per nuovo elemento. Ricerca.
+- **Board** (centro): tre modalità, commutabili dalla toolbar.
+  - *Colonne*: colonne = stato. Trascinare tra colonne cambia stato (con vincoli: `approved`
+    solo con render approvato; passaggio automatico a `generated` al primo render).
+  - *Sequenza*: griglia ordinata per numero, raggruppata per Parte; il drag riordina e rinumera.
+  - *Libera*: posizioni salvate in `board_layout`; utile per raggruppare visivamente.
+  - **Card**: numero, titolo, thumbnail (render approvato / attivo / placeholder), avatar dei
+    personaggi (ritagli dal character sheet), chip asset, badge varianti (es. "3 rami"),
+    badge job in corso, semaforo warning (alias citato ma non collegato, nessun personaggio…).
+  - **Note** (post-it): create con doppio clic sul vuoto o dalla toolbar; trascinabili ovunque;
+    rilasciate su una card si agganciano (seguono la card); checkbox "nel prompt" + sezione.
+  - **Drop su card** di: personaggio → `character_ids`; asset → `asset_ids`; snippet →
+    `snippet_ids`; render approvato di un'altra tavola → `continuity_plate_ids`; nota → aggancio.
+  - Menu contestuale card: Apri finestra tavola, Genera (×N), Genera varianti attive, Duplica,
+    Segna pronta, Copia prompt, Apri cartella render.
+  - Selezione multipla (rubber band / Cmd+clic) → "Genera selezionate in parallelo".
+- **Ispettore** (dock destro): modifica rapida della variante attiva della card selezionata e
+  **anteprima live del prompt compilato** con contatore caratteri e lista numerata delle
+  immagini allegate. "Copia prompt" per uso manuale in ChatGPT.
+- **Coda** (dock inferiore): tabella job con tavola, variante, modello, progresso, costo
+  stimato, durata, stato, pulsanti Annulla/Riprova; riga totale (job attivi / in coda /
+  spesa stimata della sessione). Un job fallito mostra il messaggio API sulla riga e sulla card.
 
-- **Colonne = stato**: `Bozza` → `Prompt pronto` → `Generata` → `Approvata` → `Finale`.
-  Trascinare una card tra colonne cambia `status` (con vincoli: non si può portare in
-  `Approvata` senza un render approvato; il sistema sposta da solo in `Generata` al primo
-  render e in `Approvata` all'approvazione).
-- **Vista alternativa "Sequenza"**: griglia ordinata per `number`, raggruppata per Parte.
-  Qui il drag riordina le tavole e rinumera.
-- **Card**: numero, titolo, thumbnail (render approvato o ultimo render o placeholder),
-  avatar dei personaggi collegati (ritagli dal character sheet), chip degli asset,
-  badge "⚠ manca riferimento" se la scena cita un alias non collegato, badge versioni (v3).
-- **Sidebar Libreria** (sinistra, collassabile): sezioni *Personaggi*, *Asset*, *Oggetti*,
-  *Ambienti*, *Render approvati*. Ogni voce è un chip **trascinabile su una card** → crea il
-  collegamento. Drop di un render approvato → aggiunge a `continuity_plate_ids`.
-- **Azioni di massa**: seleziona N card → "Genera tutte" (coda sequenziale, una chiamata per
-  tavola), "Segna pronte", "Esporta prompt".
+### 5.2 Finestra Tavola (ramificazione)
 
-### 5.3 Scheda tavola
+Si apre dal board (doppio clic o menu). Se ne possono aprire **più di una** contemporaneamente.
 
-Layout a due colonne.
+```
+┌──────────────────┬──────────────────────────────────┬─────────────────────────┐
+│ ALBERO VARIANTI  │ EDITOR VARIANTE                  │ RENDER                  │
+│ ● base           │ Scene        [ereditato ▾][reset]│ ┌────┐┌────┐┌────┐┌────┐│
+│  ├─ cielo scuro  │ Personaggi   [override]          │ │ v1 ││ v2 ││ v3 ││ v4 ││
+│  │   └─ +torcia  │  Luigi: "… senza torcia" [reset] │ └────┘└────┘└────┘└────┘│
+│  └─ inquadr. alta│ Asset        [ereditato]         │ confronto A|B  zoom     │
+│                  │ Snippet      [override]          │ ★ voto   [Approva]      │
+│ [Nuovo ramo]     │ Continuità   [ereditato]         │ [Modifica guidata…]     │
+│ [Duplica ramo]   │ Divieti      [override]          │ [Usa come riferimento]  │
+│ [Scarta]         │ Stile locale [vuoto]             │                         │
+│ [Promuovi a base]│ Immagini extra [+]               │ [Genera ×  3 ▾]         │
+│                  │ Parametri API  modello/size/q    │                         │
+│                  │ ── PROMPT COMPILATO (live) ──    │                         │
+│                  │ … 3.812 caratteri · 3 immagini   │                         │
+└──────────────────┴──────────────────────────────────┴─────────────────────────┘
+```
 
-Sinistra (input):
-- Titolo, parte, numero.
-- `scene` (IMMAGINE) e `text` (TESTO), textarea.
-- Personaggi presenti (chip rimovibili + selettore outfit per ciascuno).
-- Asset collegati, oggetti, ambienti, tavole di continuità.
-- Note di continuità, divieti specifici.
-- **Anteprima prompt compilato** (read-only, aggiornata live) con contatore caratteri e
-  lista ordinata delle immagini che verranno allegate ("[1] character sheet, [2] casa.jpg,
-  [3] render approvato tavola 01"). Pulsante "Copia prompt" per uso manuale su ChatGPT.
-- Toggle "Usa prompt manuale" → sblocca `prompt_override`.
+- **Albero varianti**: radice = base (ciò che sta sulla card). "Nuovo ramo" crea un figlio
+  della variante selezionata con tutti i campi a `null` (eredita tutto). Il nome del ramo
+  è editabile. Stato: aperto / scelto / scartato (i rami scartati si collassano).
+- **Editor**: ogni campo mostra se è *ereditato* (grigio, con tooltip "da: cielo scuro") o
+  *override* (evidenziato) e ha un pulsante *reset* che torna a ereditare. Si può
+  sovrascrivere anche la descrizione di un singolo personaggio o aggiungere uno stile
+  locale: le modifiche restano confinate a questo ramo e ai suoi discendenti.
+- **Prompt compilato**: anteprima live della variante selezionata; "Copia"; "Apri come
+  prompt manuale" (compila in `prompt_override` per ritocchi a mano).
+- **Render**: galleria della variante; "Genera ×N" lancia N job in parallelo sullo stesso
+  prompt (N render indipendenti); confronto affiancato tra due render anche di rami diversi;
+  voto a stelle; **Approva** → `plate.approved_render_id`, variante marcata *scelta*,
+  card aggiornata; **Modifica guidata** → nuovo ramo figlio con `mode: edit_from_render` e
+  istruzione testuale; **Usa come riferimento** → aggiunge il render a `extra_images` di un
+  altro ramo o lo espone in Libreria → Render ok.
+- **Promuovi a base**: copia gli override del ramo scelto nella base della tavola
+  (così le ramificazioni future partono da lì). Non tocca altre tavole.
+- **Propaga a…** (opzionale): copia uno o più override (es. `character_overrides.luigi`) in
+  altre tavole selezionate. Unico modo in cui un ramo influenza altre tavole, ed è esplicito.
 
-Destra (output):
-- Galleria render (v1…vN) con confronto affiancato, zoom, data, modello.
-- Pulsanti per render: **Approva**, **Rigenera** (stesso prompt), **Modifica guidata**
-  (campo istruzione: "rendi il cielo più scuro" → `edit_from_render`), **Elimina**.
-- Pannello "Pagina finale": anteprima 4:5 con testo; pulsanti **Impagina testo (locale)** e
-  **Aggiungi testo via AI** (vedi §9); **Esporta pagina**.
+### 5.3 Dialoghi di setup
+- *Identità grafica*: form + anteprima del blocco testuale.
+- *Protagonisti*: foto reali, campi canonici, "Genera character sheet ×N" (N varianti in
+  parallelo, scelgo la migliore), "Estrai descrizioni dalla scheda", lucchetto.
+- *Asset / Oggetti / Ambienti / Snippet*: liste editabili (stesse voci della Libreria).
+- *Storyboard*: Genera da brief | Importa da testo → anteprima tabellare con i collegamenti
+  suggeriti (per nome e alias) → "Crea tavole".
+- *Impostazioni*: modelli, qualità, concorrenza, tabella prezzi, font, provider testo.
 
 ---
 
-## 6. Motore di composizione del prompt (`composer.py`)
+## 6. Motore di composizione (`core/composer.py`)
 
-Funzione pura: `compose(project, plate) -> CompiledPrompt { text: str, images: [path], warnings: [str] }`.
+`compose(project, plate, variant_id) -> CompiledPrompt {text, images: [path], warnings}`.
+Lavora sui campi **risolti** dal `resolver` (eredità applicata).
 
 ### 6.1 Ordine delle immagini allegate
 ```
 [1]   character_sheet (se almeno un protagonista è presente)
 [2..] asset collegati, nell'ordine della card
-[..]  reference_image di secondari/oggetti presenti (se esistono)
+[..]  reference_image di secondari/oggetti presenti
 [..]  render approvati delle continuity_plate_ids
+[..]  extra_images della variante
 ```
-Se il totale supera `max_reference_images` → warning e troncamento dal fondo.
-Il prompt cita sempre le immagini **per posizione** ("immagine di riferimento 2").
+Oltre `max_reference_images` → warning e troncamento dal fondo. Il prompt cita sempre le
+immagini per posizione ("immagine di riferimento 2").
 
-### 6.2 Struttura del testo (template `tavola.md`, sezioni in quest'ordine)
-
+### 6.2 Sezioni del testo (template `tavola.md`, in quest'ordine)
 ```
-A. IDENTITÀ GRAFICA         ← StyleIdentity (globale, invariato)
-B. RIFERIMENTI VISIVI       ← una riga per immagine allegata: cosa è, come usarla
-C. PERSONAGGI IN SCENA      ← per ciascun personaggio presente: nome, canonical, key_features,
-                               outfit per il tag della tavola, never. Esplicita chi NON c'è se
-                               la scena potrebbe suggerirlo ("Claudia non è presente").
-D. OGGETTI E AMBIENTI       ← fixed_objects + environments collegati; se l'ambiente ha un
-                               asset: "quando la scena dice 'casa' intende l'immagine N,
-                               tradotta nello stile del libro: mantenere <adaptation_note>"
-E. CONTINUITÀ               ← continuity_notes + regole globali pertinenti (filtrate per
-                               keyword o selezionate manualmente)
-F. SCENA                    ← plate.scene (testo dello storyboard, intatto)
-G. FORMATO E DIVIETI        ← PageFormat + negatives globali + plate_negatives
+A. IDENTITÀ GRAFICA     StyleIdentity (+ style_override della variante se presente)
+B. RIFERIMENTI VISIVI   una riga per immagine allegata: cosa è, come usarla
+C. PERSONAGGI IN SCENA  per ciascun presente: canonical (o character_override), key_features,
+                        outfit del tag, never. Esplicita chi NON c'è se la scena lo suggerisce.
+D. OGGETTI E AMBIENTI   fixed_objects + environments; se l'ambiente ha un asset: "quando la
+                        scena dice 'casa' intende l'immagine N, tradotta nello stile del libro:
+                        mantenere <adaptation_note>"
+E. CONTINUITÀ           continuity_notes + snippet/note con section=continuity + regole globali
+F. SCENA                scene + snippet/note con section=scene
+G. FORMATO E DIVIETI    PageFormat + negatives globali + plate_negatives + snippet negatives
 ```
+Regole: italiano, frasi dichiarative, nessun markdown nel testo inviato; i personaggi assenti
+non vengono descritti; il TESTO della tavola non entra mai nel prompt immagine.
+Warnings: alias citato nella scena ma non collegato; personaggio nominato ma non collegato;
+nessun personaggio; > 16 immagini; prompt oltre soglia caratteri (default 4000).
 
-Regole del motore:
-- Tutto in italiano, frasi dichiarative, niente markdown nel prompt inviato (le API immagini
-  lo leggono come testo piatto).
-- Le descrizioni dei personaggi assenti **non** vengono incluse: riduce rumore e il rischio
-  che il modello li aggiunga.
-- Se `plate.text` contiene i dialoghi, **non** entra nel prompt immagine (sezione G ribadisce
-  "nessuna scritta"). Entra solo nella fase di impaginazione.
-- `warnings`: alias citato nella scena ma asset non collegato; personaggio nominato nella scena
-  ma non collegato; nessun personaggio collegato; > 16 immagini; prompt > soglia caratteri.
-
-### 6.3 Esempio di output (Tavola 01 del libro di esempio, abbreviato)
-
+### 6.3 Esempio di output (Tavola 01, abbreviato)
 ```
 IDENTITÀ GRAFICA. Illustrazione 2D per libro di fiabe, personaggi fumettosi, forme morbide e
 arrotondate, contorni delicati, colorazione acquerello e gouache, texture leggera di carta,
 colori luminosi ma naturali, atmosfera calda, accogliente e magica. Stesso illustratore per
 tutte le tavole.
 
-RIFERIMENTI VISIVI. Immagine 1: scheda ufficiale dei quattro protagonisti; è il riferimento
+RIFERIMENTI VISIVI. Immagine 1: scheda ufficiale dei quattro protagonisti; riferimento
 principale per volti, capelli, proporzioni e abiti; non riprodurre volti fotografici.
 Immagine 2: fotografia della casa reale della famiglia; quando la scena dice "casetta" si
 intende questo edificio, reinterpretato nello stile del libro mantenendo forma del tetto,
@@ -394,26 +412,46 @@ Papà Luigi: […] Fronte alta e barba corta sono gli elementi identificativi.
 Mamma Claudia non è presente in questa scena.
 
 OGGETTI E AMBIENTI. Passeggino di Lorenzo: verde scuro, struttura nera, cappottina verde
-scuro, ruote nere. Giardino: questo è il giardino che tornerà nelle tavole 26–28; grande
-albero, erba, zona di terra morbida.
+scuro, ruote nere. Giardino: tornerà nelle tavole 26–28; grande albero, erba, terra morbida.
 
-CONTINUITÀ. Prima tavola: stabilisce l'aspetto del giardino e dell'albero. Abiti
-dell'avventura.
+CONTINUITÀ. Prima tavola: stabilisce l'aspetto del giardino e dell'albero. Abiti dell'avventura.
 
 SCENA. Ampia inquadratura del giardino della casetta a Montiglio Monferrato in un pomeriggio
 soleggiato. […testo IMMAGINE dello storyboard…]
 
-FORMATO E DIVIETI. Illustrazione quadrata a piena immagine, senza bordi, senza fascia per il
-testo (verrà aggiunta in impaginazione). Nessuna scritta, numero, fumetto o dialogo nell'immagine.
-Nessun fotorealismo, rendering 3D, plastica lucida, volti realistici. Non introdurre altri
-personaggi umani.
+FORMATO E DIVIETI. Illustrazione quadrata a piena immagine, senza bordi né fascia per il testo
+(aggiunta in impaginazione). Nessuna scritta, numero, fumetto o dialogo nell'immagine. Nessun
+fotorealismo, rendering 3D, plastica lucida, volti realistici. Non introdurre altri umani.
 ```
 
 ---
 
-## 7. Integrazioni LLM
+## 7. Generazione parallela e coda (`core/jobs.py`)
 
-Tutte le chiamate passano da `providers/` con interfacce:
+- `JobManager` con `ThreadPoolExecutor(max_workers = settings.max_parallel_jobs)`.
+- Un **job = una chiamata API = un render**. "Genera ×3" su una variante crea 3 job con lo
+  stesso prompt compilato (snapshot al momento dell'invio: modifiche successive all'editor non
+  influenzano i job in volo). "Genera selezionate" crea un job per tavola (variante attiva).
+  "Genera tutti i rami aperti" crea un job per ramo.
+- Stati: `queued → running → done | error | cancelled`. L'annullamento di un job in coda è
+  immediato; di uno in esecuzione viene segnalato e il risultato scartato (la chiamata API non è
+  interrompibile).
+- **Stima costi** prima dell'invio: dialogo "3 render × gpt-image-1.5 high ≈ 0,xx €. Procedere?"
+  (soglia di conferma configurabile). Totale per sessione e per progetto.
+- **Rate limit (429)** e errori di rete: 3 tentativi con backoff 2/4/8 s, poi `error`. Errori di
+  policy contenuti: nessun retry. Alla ricezione di 429 la concorrenza effettiva si riduce
+  temporaneamente di 1.
+- Ogni job scrive `prompts/<NN>/<variant>/vK.txt` (prompt, file, parametri, durata, esito) e
+  il render in `renders/…`. `project.json` viene salvato dopo ogni job completato (atomico,
+  `.bak`).
+- In GUI i worker sono `QRunnable` che chiamano il core ed emettono segnali Qt (`started`,
+  `progress`, `finished`, `failed`) verso il pannello Coda e le card; nessun accesso alla UI
+  dai thread.
+- In CLI lo stesso `JobManager` stampa una riga per job (tavola, variante, stato, durata, costo).
+
+---
+
+## 8. Integrazioni LLM (`core/providers/`)
 
 ```python
 class ImageProvider:
@@ -424,192 +462,127 @@ class TextProvider:
     def structured(system, user, json_schema, images: list[Path] = []) -> dict
 ```
 
-### 7.1 Character sheet (FASE 1)
-- Input: foto reali dei protagonisti (1–3 per persona), nomi, età, abiti desiderati, stile.
-- Chiamata: `images.edit(model, image=[foto…], prompt=template character_sheet.md, size="1536x1024", quality="high", input_fidelity="high")`.
-- Il template chiede esplicitamente il layout dell'immagine di esempio: gruppo in alto, un
-  riquadro per personaggio con tratti elencati, palette, riga di espressioni (gioia,
-  meraviglia, curiosità, tenerezza). Chiede di **non** mettere testo (o, se si vuole il
-  testo come nell'esempio, accettare possibili refusi: è solo un riferimento interno).
-- Iterazione: ogni versione salvata; "Rigenera con nota" riusa la versione precedente come
-  riferimento aggiuntivo + istruzione di correzione.
-- Approvazione → `project.character_sheet`. Facoltativo: l'utente disegna i ritagli per gli
-  avatar delle card (`sheet_crop`).
-
-### 7.2 Estrazione descrizioni canoniche
-- `TextProvider.structured(images=[character_sheet], schema=CharacterDescriptions)` →
-  per ogni personaggio: `canonical`, `key_features`, `outfits.default`, `never`.
-- L'utente rivede e corregge. Queste descrizioni vanno nel prompt di ogni tavola (sezione C).
-
-### 7.3 Generazione storyboard da brief
-- System prompt (`genera_storyboard.md`): ruolo di autore di libri illustrati per bambini,
-  struttura in parti, numero tavole richiesto, per ogni tavola `scene` (descrizione visiva
-  dettagliata, personaggi riconoscibili, luce, inquadratura) e `text` (dialoghi brevi,
-  onomatopee), più `characters_present`, `environment`, `new_objects`, `continuity_notes`.
-- Output: **JSON conforme a `storyboard.schema.json`** (structured output / JSON mode).
-- Il brief include automaticamente la lista dei personaggi e asset del progetto, così il
-  modello usa i nomi e gli alias giusti e l'auto-collegamento è affidabile.
-
-### 7.4 Import di uno storyboard esistente
-- Stesso schema, system prompt `importa_storyboard.md`: "converti fedelmente, non riscrivere,
-  non inventare tavole". Se il testo contiene un blocco di identità grafica/personaggi,
-  viene estratto in campi separati e proposto per aggiornare il progetto.
-
-### 7.5 Generazione tavola
-- `images.edit(model, image=compiled.images, prompt=compiled.text, size, quality, input_fidelity)`.
-- Se `compiled.images` è vuota (tavola senza riferimenti) → `images.generate`.
-- Salvataggio render + copia del prompt in `prompts/<NN>/vN.txt`.
-
-### 7.6 Modifica guidata di un render
-- `images.edit(image=[render_corrente] + riferimenti originali, prompt="Mantieni identica
-  questa illustrazione tranne: <istruzione>. <blocco personaggi>")` → nuova versione con
-  `parent_render_id`.
-
-### 7.7 Controllo di coerenza (opzionale, v2)
-- `TextProvider.structured(images=[character_sheet, render], schema=ConsistencyReport)` →
-  punteggio per personaggio e lista difetti ("Luigi ha capelli troppo folti"). Mostrato sulla
-  card come semaforo; utile per decidere cosa rigenerare prima di guardare 30 immagini.
-
-### 7.8 Modelli
-- Immagini: default `gpt-image-1.5`; selezionabili `gpt-image-1` e `gpt-image-2`.
-  Verificato: l'endpoint di edit accetta fino a 16 immagini di riferimento; formati
-  standard `1024x1024`, `1024x1536`, `1536x1024`; `input_fidelity` high/low sui modelli 1 e 1.5
-  (il 2 lavora sempre ad alta fedeltà). Da verificare sulla documentazione ufficiale al
-  momento dell'implementazione: formati flessibili di gpt-image-2 (un 4:5 nativo
-  renderebbe opzionale la strategia §9), prezzi correnti.
-- Testo: configurabile; qualsiasi modello recente con supporto a immagini in input e output
-  JSON (OpenAI) oppure Anthropic (`claude-sonnet-5-5` consigliato per costo/qualità).
-
----
-
-## 8. API REST del backend
-
-Prefisso `/api`. Tutte le risposte JSON. Errori con `{error, detail}`.
-
-| Metodo | Percorso | Scopo |
+| Uso | Chiamata | Note |
 |---|---|---|
-| GET/POST | `/projects` | lista / crea |
-| GET/PUT/DELETE | `/projects/{slug}` | progetto completo / salva / elimina |
-| POST | `/projects/{slug}/upload` | upload immagine (`kind`: source, asset, reference) |
-| POST | `/projects/{slug}/character-sheet/generate` | job: genera sheet |
-| POST | `/projects/{slug}/character-sheet/{id}/approve` | approva versione |
-| POST | `/projects/{slug}/characters/extract` | job: descrizioni canoniche dallo sheet |
-| POST | `/projects/{slug}/storyboard/generate` | job: da brief → JSON (non crea tavole) |
-| POST | `/projects/{slug}/storyboard/import` | job: da testo → JSON |
-| POST | `/projects/{slug}/plates/bulk` | crea tavole da JSON approvato |
-| PUT | `/projects/{slug}/plates/{id}` | aggiorna tavola |
-| POST | `/projects/{slug}/plates/reorder` | nuovo ordine (lista id) |
-| GET | `/projects/{slug}/plates/{id}/prompt` | prompt compilato + immagini + warnings |
-| POST | `/projects/{slug}/plates/{id}/generate` | job: genera render |
-| POST | `/projects/{slug}/plates/{id}/renders/{rid}/edit` | job: modifica guidata |
-| POST | `/projects/{slug}/plates/{id}/renders/{rid}/approve` | approva |
-| POST | `/projects/{slug}/plates/{id}/final` | impagina testo (`mode`: local \| ai) |
-| GET | `/projects/{slug}/export` | ZIP pagine + prompt (query `pdf=1`) |
-| GET | `/jobs/{id}` | stato job: queued/running/done/error, result |
-| GET/PUT | `/settings` | impostazioni globali (senza chiavi) |
+| Character sheet | `images.edit(image=[foto…], prompt=character_sheet.md, size="1536x1024", quality="high", input_fidelity="high")` | ×N in parallelo; iterazione "Rigenera con nota" riusa la versione precedente come riferimento. |
+| Descrizioni canoniche | `TextProvider.structured(images=[sheet], schema=CharacterDescriptions)` | L'utente corregge; i testi finiscono nella sezione C. |
+| Storyboard da brief | `TextProvider.structured(system=genera_storyboard.md, schema=storyboard.schema.json)` | Il brief include nomi personaggi e alias asset del progetto, così l'auto-collegamento è affidabile. |
+| Import storyboard | come sopra con `importa_storyboard.md` ("converti fedelmente, non inventare") | Estrae anche identità grafica e personaggi se presenti nel testo. |
+| Render tavola | `images.edit(image=compiled.images, prompt=compiled.text, …)`; `images.generate` se senza riferimenti | Un job per render. |
+| Modifica guidata | `images.edit(image=[render] + riferimenti, prompt="Mantieni identica questa illustrazione tranne: <istruzione>. <blocco personaggi>")` | Crea un ramo figlio. |
+| Controllo coerenza (v2) | `TextProvider.structured(images=[sheet, render], schema=ConsistencyReport)` | Semaforo per personaggio sulla card. |
 
-Static: `/files/{slug}/...` serve la cartella progetto in sola lettura.
+Modelli immagine: default `gpt-image-1.5`; selezionabili `gpt-image-1` e `gpt-image-2`.
+Verificato: edit accetta fino a 16 immagini di riferimento; formati `1024x1024`, `1024x1536`,
+`1536x1024`; `input_fidelity` high/low su 1 e 1.5 (il 2 lavora sempre ad alta fedeltà).
+Da verificare sulla documentazione ufficiale al momento dell'implementazione: formati
+flessibili di gpt-image-2 (un 4:5 nativo renderebbe opzionale la strategia §10), prezzi.
+Modelli testo: configurabili; OpenAI con immagini in input e JSON, oppure Anthropic
+(`claude-sonnet-5-5` consigliato per costo/qualità).
 
 ---
 
-## 9. Impaginazione e post-processing (`layout.py`)
+## 9. CLI (`python -m storybook`)
 
-### 9.1 Strategia consigliata: "quadrato + fascia" (`square_plus_band`)
-Osservazione: in una pagina 4:5, l'80% superiore dell'altezza è **esattamente un quadrato**
-(larghezza W, altezza 1,25·W × 0,8 = W). Quindi:
-
-1. si genera l'illustrazione **quadrata** (`1024x1024`, o più grande se il modello lo consente)
-   a piena immagine, senza fascia;
-2. il tool costruisce localmente la pagina 4:5 (es. 2048×2560): illustrazione in alto,
-   fascia chiara in basso (20%) con il TESTO renderizzato da Pillow.
-
-Vantaggi: layout deterministico, testo senza refusi, font coerente in tutto il libro,
-rigenerare l'illustrazione non tocca il testo, e il modello usa tutto il frame per la scena.
-
-### 9.2 Alternativa: pagina intera (`full_page`)
-Si genera `1024x1536` (2:3) chiedendo al modello l'illustrazione nel 78% superiore e fascia
-chiara sotto; il tool ritaglia a 4:5 (1024×1280) dall'alto. Meno controllabile; mantenuta per
-chi vuole la fascia "dipinta" dal modello.
-
-### 9.3 Testo nella fascia
-- Locale: wrap automatico, dimensione font adattiva tra `font_size_min` e `font_size_max`,
-  colore scuro su fascia chiara (colore fascia campionato dal bordo inferiore
-  dell'illustrazione o fisso), margini configurabili, supporto a battute su righe separate.
-- Via AI (su richiesta esplicita): `images.edit(image=[pagina_senza_testo], prompt="Aggiungi
-  nella fascia inferiore chiara esattamente questo testo, in italiano, carattere leggibile
-  per bambini, senza modificare l'illustrazione: «…»")`. Avviso in UI: possibili refusi,
-  controllare sempre.
-
-### 9.4 Export
-- ZIP: `pages/01.png … 30.png`, `renders/`, `prompts/*.txt`, `project.json`.
-- PDF: pagine in ordine, 300 dpi equivalenti.
+| Comando | Effetto |
+|---|---|
+| `gui [--project SLUG]` | apre la finestra principale |
+| `new NAME` | crea progetto da template |
+| `import-storyboard SLUG file.txt` | testo → JSON → tavole (stampa anteprima, chiede conferma) |
+| `compose SLUG --plate N [--variant ID]` | stampa prompt compilato + lista immagini + warning |
+| `generate SLUG --plates 1-5,8 [--variant ID] [--n 3] [--parallel 3] [--yes]` | genera in parallelo, stampa costo stimato e chiede conferma |
+| `approve SLUG --plate N --render ID` | approva un render |
+| `finalize SLUG [--plates …] [--mode local\|ai]` | impagina testo |
+| `export SLUG [--pdf] [--out DIR]` | ZIP/PDF |
+| `status SLUG` | tabella tavole: stato, rami, render, spesa |
 
 ---
 
-## 10. Costi, errori, robustezza
+## 10. Impaginazione e post-processing (`core/layout.py`)
 
-- **Stima costi** prima di ogni generazione (tabella prezzi in `settings`, aggiornabile a mano)
-  e totale speso per progetto (somma `cost_estimate` dei render).
-- **Retry**: errori di rete/429 → 3 tentativi con backoff esponenziale (2, 4, 8 s). Errori di
-  policy contenuti → nessun retry, messaggio chiaro sulla card.
-- **Coda**: una generazione alla volta per default (configurabile 2–3 in parallelo).
-- **Log**: ogni chiamata registrata in `prompts/<NN>/` con prompt, lista file, modello,
-  parametri, durata, esito. Permette di riprodurre o incollare a mano su ChatGPT.
-- **Salvataggio**: `project.json` scritto in modo atomico (file temporaneo + rename) e con
-  backup `.bak` dell'ultima versione.
+### 10.1 Strategia consigliata: "quadrato + fascia" (`square_plus_band`)
+In una pagina 4:5 l'80% superiore dell'altezza è **esattamente un quadrato**
+(W × 1,25W × 0,8 = W × W). Quindi: si genera l'illustrazione quadrata a piena immagine; il tool
+costruisce localmente la pagina 4:5 (es. 2048×2560) con l'illustrazione in alto e la fascia
+chiara (20%) in basso con il TESTO renderizzato da Pillow. Layout deterministico, testo senza
+refusi, font coerente, rigenerare l'illustrazione non tocca il testo.
+
+### 10.2 Alternativa: pagina intera (`full_page`)
+Si genera `1024x1536` chiedendo l'illustrazione nel 78% superiore e fascia chiara sotto; il tool
+ritaglia a 4:5 dall'alto. Meno controllabile.
+
+### 10.3 Testo nella fascia
+- Locale: wrap automatico, font adattivo tra min e max, colore scuro su fascia chiara (colore
+  campionato dal bordo inferiore dell'illustrazione o fisso), margini configurabili, battute su
+  righe separate.
+- Via AI (su richiesta): `images.edit(image=[pagina], prompt="Aggiungi nella fascia inferiore
+  chiara esattamente questo testo, in italiano, carattere leggibile per bambini, senza modificare
+  l'illustrazione: «…»")`. Avviso: possibili refusi.
+
+### 10.4 Export
+ZIP con `pages/`, `renders/`, `prompts/`, `project.json`; PDF con le pagine in ordine.
 
 ---
 
 ## 11. Requisiti non funzionali e sicurezza
 
-- Avvio con un comando: `uvicorn backend.main:app --host 127.0.0.1 --port 8765` (o `python -m storybook`).
-- Nessuna chiave nel frontend, nei log o in `project.json`.
-- Upload: solo PNG/JPG/WebP, max 20 MB, nomi normalizzati, EXIF rimosso (le foto di famiglia
+- Chiave API solo in `.env` (come nel cropper); mai in `project.json`, nei log o nei prompt
+  esportati.
+- Upload immagini: PNG/JPG/WebP, EXIF rimosso alla copia in `sources/` (le foto di famiglia
   contengono spesso GPS).
-- `projects/` in `.gitignore`.
-- Funziona offline per tutto tranne le chiamate AI (board, composizione, impaginazione, export).
+- `projects/` in `.gitignore`. Salvataggio atomico + `.bak`. Autosave a ogni modifica.
+- Tutto funziona offline tranne le chiamate AI.
+- macOS: testato su Apple Silicon; PySide6 da pip; nessuna dipendenza di sistema. Packaging
+  `.app` con PyInstaller opzionale, non richiesto (si lancia da terminale).
 
 ---
 
 ## 12. Piano di implementazione
 
-**M1 — Scheletro e composizione (senza AI)**
-- FastAPI + storage + modello dati; SPA con Board e Scheda tavola; drag & drop (stati,
-  ordine, chip → card); upload asset; motore di composizione con anteprima e "Copia prompt".
-- Risultato utile già da solo: si incollano prompt e immagini a mano su ChatGPT.
+**M1 — Core e board (senza AI)**
+Modelli, storage, resolver delle varianti, composer con test unitari; finestra principale con
+Libreria, Board (colonne/sequenza/libera), Note, Ispettore con anteprima prompt, "Copia prompt";
+CLI `compose`. Già utile: prompt e immagini si incollano a mano in ChatGPT.
 
-**M2 — Generazione immagini**
-- `openai_images.py`, job asincroni, galleria versioni, approvazione, modifica guidata,
-  impaginazione locale del testo, export ZIP.
+**M2 — Generazione parallela**
+`JobManager`, provider OpenAI immagini, pannello Coda, stima costi, render sulle card,
+approvazione, impaginazione locale, export ZIP; CLI `generate`, `approve`, `export`.
 
-**M3 — Storyboard e personaggi assistiti**
-- Import storyboard testuale → JSON → tavole con auto-collegamento; generazione da brief;
-  character sheet da foto; estrazione descrizioni canoniche.
+**M3 — Finestra Tavola e ramificazioni**
+Albero varianti, editor con ereditato/override/reset, Genera ×N, confronto, Modifica guidata,
+Promuovi a base, Propaga a.
 
-**M4 — Qualità**
-- Controllo di coerenza vision, stima costi, PDF, testo via AI, template modificabili da UI.
+**M4 — Assistenti**
+Import storyboard → JSON → tavole; generazione da brief; character sheet ×N da foto;
+estrazione descrizioni canoniche.
+
+**M5 — Qualità**
+Controllo di coerenza vision, testo via AI, PDF, template modificabili dall'app.
 
 ---
 
 ## 13. Decisioni prese e punti aperti
 
 Decisioni:
-- I blocchi globali non si trascinano: entrano sempre. Il drag & drop è per personaggi, asset,
-  continuità, ordine e stato.
-- Il TESTO della tavola non va mai nel prompt immagine; si impagina dopo (locale di default).
-- Illustrazione quadrata + fascia costruita localmente come strategia predefinita.
-- Una chiamata API per tavola; nessuna generazione "a lotto" in una sola richiesta.
+- App desktop PySide6 avviata da terminale, con CLI equivalente sullo stesso core.
+- I blocchi globali entrano sempre; drag & drop per personaggi, asset, snippet, note, continuità,
+  ordine e stato.
+- Un job = una chiamata = un render; concorrenza configurabile; stima costi con conferma.
+- Le ramificazioni sono per tavola, con eredità per campo e override anche di descrizioni di
+  personaggi e stile; influenzano altre tavole solo con "Propaga a" esplicito.
+- TESTO mai nel prompt immagine; impaginazione locale di default; illustrazione quadrata + fascia.
 - Dati su filesystem, un progetto = una cartella.
 
 Da decidere durante l'implementazione:
-- Se gpt-image-2 espone un 4:5 nativo, offrirlo come terza strategia.
-- Soglia caratteri del prompt oltre la quale avvisare (dipende dal modello; partire da 4000).
-- Se usare SSE invece del polling per lo stato dei job.
-- Font predefinito per la fascia testo (serve un font con licenza libera incluso nel repo).
+- 4:5 nativo se gpt-image-2 lo espone.
+- Soglia caratteri del prompt (partire da 4000).
+- Font con licenza libera da includere per la fascia testo.
+- Se le liste nelle varianti usano solo sostituzione completa o anche add/remove (consigliato
+  add/remove per `snippet_ids` e `plate_negatives`).
 
 ---
 
-## Appendice A — Template dei prompt (bozze, file in `backend/templates/`)
+## Appendice A — Template dei prompt (bozze, in `core/templates/`)
 
 ### A.1 `character_sheet.md`
 ```
@@ -620,8 +593,8 @@ Traduci ogni persona in un personaggio fumettoso semplice e riconoscibile, mante
 distintivi (forma del viso, capelli, colore occhi, barba, corporatura naturale) senza
 fotorealismo. Abiti: {per ogni protagonista: outfit default}.
 Composizione: in alto il gruppo dei {N} personaggi sorridenti insieme; sotto, un riquadro per
-ciascuno con mezzo busto e la palette dei suoi colori; in basso una riga con le stesse quattro
-persone in quattro espressioni: gioia, meraviglia, curiosità, tenerezza.
+ciascuno con mezzo busto e la palette dei suoi colori; in basso una riga con le stesse persone
+in quattro espressioni: gioia, meraviglia, curiosità, tenerezza.
 Sfondo chiaro tipo carta, {ambientazione opzionale}. Nessun testo nell'immagine.
 ```
 
@@ -648,16 +621,16 @@ allo schema fornito.
 ```
 
 ### A.4 `tavola.md`
-Vedi §6.2 e §6.3: il template è la concatenazione delle sezioni A–G con i segnaposto
-`{style.*}`, `{references[]}`, `{characters[]}`, `{objects[]}`, `{environments[]}`,
-`{continuity}`, `{scene}`, `{format}`, `{negatives[]}`.
+Concatenazione delle sezioni A–G di §6.2 con i segnaposto `{style}`, `{references[]}`,
+`{characters[]}`, `{objects[]}`, `{environments[]}`, `{continuity}`, `{scene}`, `{format}`,
+`{negatives[]}`.
 
 ## Appendice B — Schema JSON dello storyboard
-File separato: `storyboard.schema.json` (stessa cartella di questo documento).
+File `storyboard.schema.json` nella stessa cartella.
 
 ## Appendice C — Riferimenti verificati durante la stesura
-- Rilascio gpt-image-1.5 (16 dic 2025) e gpt-image-2 (21 apr 2026) con editing su più immagini
-  di riferimento (fino a 16) e fedeltà elevata agli input.
-- Endpoint images edit: parametro `image[]` ripetibile; formati 1024x1024, 1536x1024, 1024x1536;
+- gpt-image-1.5 (16 dic 2025) e gpt-image-2 (21 apr 2026): editing con più immagini di
+  riferimento (fino a 16) e alta fedeltà agli input.
+- Endpoint images edit: `image[]` ripetibile; formati 1024x1024, 1536x1024, 1024x1536;
   `input_fidelity` high/low.
 Da ricontrollare sulla documentazione ufficiale OpenAI prima dell'implementazione.
